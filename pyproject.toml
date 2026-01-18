@@ -7,7 +7,9 @@ authors = [
     { name = "SamHsu", email = "yxu166@jh.edu" }
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "cpg2py",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
