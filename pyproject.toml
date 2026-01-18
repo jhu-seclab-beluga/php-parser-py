@@ -1,7 +1,7 @@
 [project]
 name = "php-parser-py"
 version = "0.1.0"
-description = "Add your description here"
+description = "Python wrapper for PHP-Parser using cpg2py"
 readme = "README.md"
 authors = [
     { name = "SamHsu", email = "yxu166@jh.edu" }
@@ -12,3 +12,10 @@ dependencies = []
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.uv.build-backend]
+# Include resources directory in package data
+source-include = ["resources/*.zip"]

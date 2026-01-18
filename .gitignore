@@ -47,6 +47,9 @@ build/
 *.egg-info/
 .eggs/
 
+# Runtime extracted resources
+src/php_parser_py/vendor/
+
 # Rust / Cargo
 /target/
 **/*.rs.bk

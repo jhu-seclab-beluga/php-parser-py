@@ -4,34 +4,30 @@
 
 **Problem Statement**
 
-Python-based static analysis tools for PHP require Abstract Syntax Tree (AST) representations that match the structure and semantics of nikic/PHP-Parser. Existing solutions either lack complete AST fidelity or require external PHP installations. This project provides a Python interface that generates AST structures fully consistent with PHP-Parser's node hierarchy, enabling seamless integration with PHP analysis toolchains while operating through an embedded static PHP binary.
+Python-based static analysis tools for PHP require Abstract Syntax Tree representations that integrate with graph-based analysis frameworks. Existing solutions either lack complete AST fidelity or require external PHP installations. This project bridges PHP-Parser's native capabilities with cpg2py's graph framework, enabling Python tools to work with PHP ASTs while delegating all parsing and code generation to PHP-Parser.
 
 **System Role**
 
-php-parser-py serves as a Python-native AST provider that mirrors nikic/PHP-Parser's node structure and behavior, enabling Python applications to parse, traverse, modify, and regenerate PHP source code with full compatibility to PHP-Parser's object model.
+php-parser-py serves as a thin wrapper that bridges PHP-Parser's JSON serialization with cpg2py's graph structure, maximizing reuse of PHP-Parser's native functionality.
 
 **Data Flow**
 
-- **Inputs:** PHP source code (string or file path)
-- **Outputs:** AST Node Tree (PHP-Parser-consistent structure), PHP source code (regenerated)
-- **Connections:** Python Application → php-parser-py → static-php-py → PHP-Parser PHAR → AST JSON → Python AST Nodes
+- **Inputs:** PHP Source Code
+- **Outputs:** PHPASTGraph, PHP Source Code (regenerated)
+- **Connections:** PHP Source → PHP-Parser → AST JSON → PHPASTGraph → AST JSON → PHP-Parser → PHP Source
 
 **Scope Boundaries**
 
 - **Owned:**
-  - PHP source code to AST parsing (via PHP-Parser)
-  - AST to PHP source code generation (via PrettyPrinter)
-  - PHP-Parser-consistent AST node type hierarchy in Python
-  - AST traversal with visitor pattern (NodeTraverser/NodeVisitor style)
-  - cpg2py-compatible querier interface for AST access
-  - PHP binary lifecycle through static-php-py
+  - PHP-Parser invocation for parsing and code generation
+  - AST JSON to cpg2py Storage mapping
+  - PHPASTNode and PHPASTGraph extending cpg2py interfaces
 
 - **Not Owned:**
-  - Control Flow Graph (CFG) construction
-  - Data Flow Graph (DFG) construction
-  - PHP code execution or runtime interpretation
-  - PHP version detection or multi-version support beyond PHP-Parser 4.x
-  - Code formatting or style enforcement beyond PrettyPrinter behavior
+  - Node type definitions (from PHP-Parser)
+  - AST validation (by PHP-Parser)
+  - Code formatting (by PHP-Parser PrettyPrinter)
+  - Parsing logic reimplementation
 
 ---
 
@@ -40,70 +36,67 @@ php-parser-py serves as a Python-native AST provider that mirrors nikic/PHP-Pars
 **Conceptual Diagram**
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           php-parser-py                                  │
-│                                                                          │
-│  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────┐ │
-│  │  PHP Source  │────▶│  PHP Runner  │────▶│  AST Node Tree           │ │
-│  │  (codes)     │     │  (static-php │     │  (PHP-Parser structure)  │ │
-│  └──────────────┘     │   -py)       │     └──────────────────────────┘ │
-│         ▲             └──────────────┘              │                    │
-│         │                    │                      ▼                    │
-│         │                    │              ┌──────────────────────────┐ │
-│  ┌──────┴───────┐            │              │  NodeTraverser           │ │
-│  │ PrettyPrinter│◀───────────┘◀─────────────│  + NodeVisitor           │ │
-│  │ (AST→Code)   │                           └──────────────────────────┘ │
-│  └──────────────┘                                    │                    │
-│                                                      ▼                    │
-│                                             ┌──────────────────────────┐ │
-│                                             │  cpg2py Querier          │ │
-│                                             │  Interface Adapter       │ │
-│                                             └──────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        External Dependencies                             │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────────────────┐ │
-│  │ static-php-py  │  │ PHP-Parser     │  │ cpg2py                     │ │
-│  │ (PHP Binary)   │  │ (PHAR 4.19.4)  │  │ (Traversal Interface)      │ │
-│  └────────────────┘  └────────────────┘  └────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        php-parser-py                             │
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐   │
+│  │ PHP Source   │───▶│ PHP Runner   │───▶│ AST JSON         │   │
+│  └──────────────┘    └──────────────┘    └──────────────────┘   │
+│         ▲                   │                    │               │
+│         │                   │                    ▼               │
+│         │                   │            ┌──────────────────┐   │
+│         │                   │            │ PHPASTGraph      │   │
+│         │                   │            │ (cpg2py Storage) │   │
+│         │                   │            └──────────────────┘   │
+│         │                   │                    │               │
+│         │                   ▼                    ▼               │
+│  ┌──────┴───────┐    ┌──────────────┐    ┌──────────────────┐   │
+│  │ PHP Source   │◀───│ PHP Runner   │◀───│ AST JSON         │   │
+│  │ (regenerated)│    │              │    │ (reconstructed)  │   │
+│  └──────────────┘    └──────────────┘    └──────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     External Dependencies                        │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────────┐ │
+│  │ static-php-py  │  │ PHP-Parser     │  │ cpg2py             │ │
+│  │ (PHP Runtime)  │  │ (Parsing)      │  │ (Graph Framework)  │ │
+│  └────────────────┘  └────────────────┘  └────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 **Core Concepts**
 
-**AST Node**
+- **PHP Source Code**
+  - **Definition:** The input PHP code provided as a string or file path for parsing. It represents the raw textual form of PHP programs before AST transformation.
+  - **Scope:** Includes any valid PHP syntax supported by PHP-Parser. Excludes binary files or non-PHP content.
+  - **Relationships:** Transformed into AST JSON by PHP Runner, regenerated from PHPASTGraph via PHP Runner.
 
-An AST Node is the fundamental building block of the syntax tree, directly corresponding to PHP-Parser's `PhpParser\Node` class hierarchy. Each node has a specific type (e.g., `Stmt_Function`, `Expr_Variable`, `Scalar_String`), sub-node attributes matching PHP-Parser's property definitions, and source location metadata. The Python node classes mirror PHP-Parser's naming conventions and attribute structures to ensure compatibility with PHP-Parser-based analysis tools.
+- **AST JSON**
+  - **Definition:** PHP-Parser's native JSON representation of the Abstract Syntax Tree. This format captures complete structural and metadata information including node types, child relationships, and source locations.
+  - **Scope:** Includes all node types and attributes defined by PHP-Parser. This project does not define or interpret the JSON schema.
+  - **Relationships:** Produced by PHP-Parser during parsing, consumed by PHP-Parser during code generation, stored in PHPASTGraph as cpg2py Storage.
 
-**Node Type Hierarchy**
+- **PHPASTNode**
+  - **Definition:** A graph node extending cpg2py's AbcNodeQuerier that wraps a single AST JSON node. It provides dynamic property access to all JSON fields without hardcoded field definitions.
+  - **Scope:** Includes all properties from the original JSON node. Excludes type-specific behavior or validation.
+  - **Relationships:** Contained within PHPASTGraph, linked to other nodes via edges, accessed via cpg2py traversal methods.
 
-The Node Type Hierarchy organizes AST nodes into categories matching PHP-Parser's namespace structure. Primary categories include `Stmt` (statements like function declarations, class definitions, if/while blocks), `Expr` (expressions like function calls, binary operations, variable access), and `Scalar` (literal values like strings and numbers). Each specific node type (e.g., `Stmt_Class`, `Expr_MethodCall`) inherits from its category base class while maintaining PHP-Parser-compatible attribute names.
+- **PHPASTGraph**
+  - **Definition:** A graph structure extending cpg2py's AbcGraphQuerier that stores the complete AST. It uses cpg2py's Storage for node and edge management, representing parent-child relationships as typed edges.
+  - **Scope:** Includes all AST nodes and their relationships. Provides cpg2py-compatible traversal methods.
+  - **Relationships:** Contains PHPASTNode instances, constructed from AST JSON, reconstructs AST JSON for code generation.
 
-**Sub-Nodes and Attributes**
+- **PHP Runner**
+  - **Definition:** The component that manages communication with PHP-Parser via static-php-py. It invokes PHP-Parser for parsing and code generation, handling input/output serialization.
+  - **Scope:** Includes process lifecycle and data exchange. Excludes parsing or printing logic implementation.
+  - **Relationships:** Uses static-php-py for PHP execution, receives PHP Source Code and AST JSON, produces AST JSON and PHP Source Code.
 
-Sub-Nodes represent child AST elements within a parent node, such as `stmts` (statement list), `params` (parameter list), or `expr` (single expression). Attributes store metadata including `startLine`, `endLine`, `startFilePos`, `endFilePos`, and `comments`. The distinction between sub-nodes (structural children) and attributes (metadata) follows PHP-Parser's internal classification.
-
-**NodeTraverser**
-
-NodeTraverser implements the visitor pattern for systematic AST traversal. It walks the node tree in a defined order, invoking visitor callbacks at each node. The traverser supports multiple visitors, allowing composition of analysis or transformation passes. Its behavior mirrors PHP-Parser's `NodeTraverser` class, including control flow mechanisms for skipping subtrees or stopping traversal.
-
-**NodeVisitor**
-
-NodeVisitor defines the callback interface for AST traversal. It provides four hook points matching PHP-Parser's visitor interface: `beforeTraverse` (called before traversal begins), `enterNode` (called when entering a node), `leaveNode` (called after processing a node's children), and `afterTraverse` (called when traversal completes). Visitors can observe nodes for analysis or return modified/replacement nodes for transformation.
-
-**PrettyPrinter**
-
-PrettyPrinter converts an AST Node Tree back into valid PHP source code. It mirrors PHP-Parser's `PrettyPrinter\Standard` behavior, producing normalized code output. Format-preserving printing (maintaining original whitespace and formatting where possible) may be supported as an extended feature following PHP-Parser's format-preserving printer capabilities.
-
-**PHP Runner**
-
-PHP Runner abstracts the interaction with static-php-py and the embedded PHP-Parser PHAR. It manages subprocess communication, serialization of PHP code input, and deserialization of AST output (typically JSON format). The runner handles the lifecycle of PHP process invocations and provides a clean interface to the parsing and printing capabilities of PHP-Parser.
-
-**Querier Interface Adapter**
-
-The Querier Interface Adapter bridges PHP-Parser-style AST nodes with cpg2py's abstract querier interfaces (`AbcNodeQuerier`, `AbcEdgeQuerier`, `AbcGraphQuerier`). This allows users familiar with cpg2py to apply graph-style queries (like `children()`, `succ()`, `prev()`) to the PHP AST. The adapter wraps AST nodes without changing their PHP-Parser-consistent structure.
+- **Storage**
+  - **Definition:** cpg2py's internal data structure for holding nodes, edges, and their properties. It provides the foundation for graph traversal and query operations.
+  - **Scope:** Includes node/edge storage and property management. Inherited from cpg2py without modification.
+  - **Relationships:** Used by PHPASTGraph, populated from AST JSON, reconstructed to AST JSON.
 
 ---
 
@@ -111,70 +104,48 @@ The Querier Interface Adapter bridges PHP-Parser-style AST nodes with cpg2py's a
 
 **Data Contracts**
 
-- **With static-php-py:**
-  PHP Runner invokes the static PHP binary through static-php-py's API. Input consists of UTF-8 encoded PHP source code passed via subprocess stdin or temporary files. Output is JSON-serialized AST following PHP-Parser's JsonSerializer format.
+- **With PHP-Parser:** All data exchange uses PHP-Parser's native JSON format. The JSON schema is defined by PHP-Parser and preserved without interpretation or modification by this project.
 
-- **With PHP-Parser PHAR:**
-  The PHAR file (resources/php-parser-4.19.4.zip containing php-parser.phar) provides the parsing engine. Communication occurs through PHP script invocation that uses PHP-Parser's `ParserFactory`, `NodeDumper` or `JsonSerializer` for AST output, and `PrettyPrinter\Standard` for code regeneration.
+- **With cpg2py:** PHPASTNode extends AbcNodeQuerier, PHPASTGraph extends AbcGraphQuerier. All traversal methods are inherited from cpg2py. Storage holds AST data with PARENT_OF edges representing nesting.
 
-- **With cpg2py:**
-  AST Node classes can optionally implement cpg2py's `AbcNodeQuerier` interface methods. The Querier Interface Adapter provides `children()`, `parent()`, `succ()`, `prev()` methods wrapping the underlying AST structure. This enables cpg2py-style graph queries without altering the PHP-Parser-consistent node structure.
-
-- **Node Structure Consistency Contract:**
-  All Python AST Node classes maintain naming and attribute consistency with PHP-Parser's node classes. `Stmt\Function_` in PHP-Parser corresponds to `Stmt_Function` in Python. Node attributes like `name`, `params`, `stmts`, `returnType`, `attrGroups` preserve identical names and semantics.
+- **With static-php-py:** PHP Runner uses static-php-py to invoke PHP-Parser. Input and output pass through process stdin/stdout as text.
 
 **Internal Processing Flow**
 
-1. **Parse Request** - User provides PHP source code string or file path to the parser interface.
+1. **Parse Input** - User provides PHP Source Code to the parsing interface.
 
-2. **Runner Preparation** - PHP Runner prepares the PHP-Parser invocation script with serialization instructions.
+2. **PHP Invocation** - PHP Runner invokes PHP-Parser to parse the code and serialize the AST to JSON format.
 
-3. **Binary Execution** - static-php-py launches the PHP process with the PHP-Parser PHAR and runner script.
+3. **JSON Capture** - PHP Runner captures the AST JSON output.
 
-4. **AST Parsing** - PHP-Parser's `ParserFactory` creates a parser instance and parses the source into PHP AST objects.
+4. **Storage Population** - The JSON is walked recursively, creating nodes and PARENT_OF edges in cpg2py Storage.
 
-5. **JSON Serialization** - The PHP-side script serializes the AST to JSON format with full node type and attribute preservation.
+5. **Graph Creation** - PHPASTGraph is instantiated with the populated Storage.
 
-6. **JSON Capture** - PHP Runner captures the JSON output from PHP process stdout.
+6. **Traversal** - User traverses the graph using cpg2py's inherited methods.
 
-7. **Node Construction** - Parser module deserializes JSON and instantiates corresponding Python AST Node objects with PHP-Parser-consistent types.
+7. **JSON Reconstruction** - For code generation, Storage is walked to reconstruct the original JSON structure.
 
-8. **Tree Assembly** - Individual nodes are linked into a complete AST Node Tree with parent-child relationships.
+8. **Code Generation** - PHP Runner invokes PHP-Parser to decode JSON and generate PHP Source Code.
 
-9. **Traversal (optional)** - User attaches NodeVisitor instances to NodeTraverser and executes traversal over the tree.
-
-10. **Code Regeneration (optional)** - Modified or unmodified AST is serialized back to JSON and sent to PHP-Parser's PrettyPrinter via PHP Runner.
-
-11. **Code Delivery** - Regenerated PHP source code is returned to the user as a string.
+9. **Output Delivery** - Regenerated PHP Source Code is returned to the user.
 
 ---
 
 ## 4. Scenarios
 
-**Typical: Parse PHP File and Extract Function Names**
+- **Typical:** A security researcher parses a PHP file and queries for all function definitions using cpg2py's traversal methods. They filter nodes by the label property to find specific node types, then access node properties to extract function names. All type information comes from PHP-Parser's JSON.
 
-A security researcher needs to inventory all function definitions in a PHP application. They call `parse_file("target.php")` to obtain the AST Node Tree. Using NodeTraverser with a custom NodeVisitor, they implement `enterNode` to check for `Stmt_Function` type nodes, collecting the `name` attribute from each. The visitor accumulates function names during traversal, providing a complete list upon traversal completion.
+- **Typical:** A developer extracts all variable assignments from a codebase. They traverse the graph using descendants method, filter by label, and collect property values. The dynamic property access works for any node type without predefined schemas.
 
-**Typical: Rename Variable Across Codebase**
+- **Boundary:** A user provides PHP code with syntax errors. PHP-Parser reports errors during parsing, and PHP Runner propagates the error information to the user. No partial AST is produced; error handling follows PHP-Parser's behavior.
 
-A developer wants to rename a variable `$oldName` to `$newName` throughout a file. They parse the source, then traverse with a transforming NodeVisitor. When `enterNode` encounters an `Expr_Variable` node with `name` matching "oldName", it returns a new node with the updated name. After traversal, they call the PrettyPrinter to generate the modified PHP source code.
+- **Boundary:** PHP-Parser is updated with new node types. Since this project has no hardcoded type definitions, new types appear automatically in the label property. All properties remain accessible via dynamic property access.
 
-**Boundary: Syntax Error Handling**
+- **Interaction:** A refactoring tool modifies property values in the graph, then regenerates code. The JSON reconstruction preserves all structural relationships. PHP-Parser's code generator produces valid PHP reflecting the modifications.
 
-A user submits PHP code with a missing semicolon. PHP-Parser enters error recovery mode if configured, producing a partial AST with error nodes marking unparseable regions. The Python parser interface propagates error information including line number and error message. Users can inspect error nodes to understand parsing failures or handle the exception if strict parsing mode is enabled.
-
-**Boundary: Large File Processing**
-
-A user parses a PHP file exceeding 50,000 lines. The PHP process handles parsing with PHP-Parser's efficient implementation. JSON serialization may produce large output; the Python side deserializes and constructs nodes incrementally. Memory usage scales with AST size. Users processing extremely large codebases should consider file-by-file processing rather than loading all ASTs simultaneously.
-
-**Interaction: Round-Trip Code Transformation**
-
-An automated refactoring tool needs to add type hints to function parameters. The tool parses source code, traverses to find `Stmt_Function` nodes, examines each `Param` sub-node, and adds `type` attributes where missing. The modified AST passes through PrettyPrinter, producing valid PHP code with the new type hints. Parsing the regenerated code produces an AST structurally equivalent to the modified tree, confirming successful round-trip transformation.
-
-**Interaction: cpg2py-Style AST Queries**
-
-A vulnerability scanner uses cpg2py for multi-language analysis. When processing PHP, the scanner wraps the AST Node Tree with the Querier Interface Adapter. It uses `graph.node(id)` to access specific nodes, `children(node)` to navigate into sub-nodes, and filtering predicates to locate nodes of interest. The underlying nodes remain PHP-Parser-consistent, while the query interface provides familiar cpg2py semantics.
+- **Interaction:** A multi-language analyzer combines PHP ASTs with other language graphs in a cpg2py pipeline. PHPASTGraph is fully compatible with cpg2py's interface, enabling unified traversal and analysis across languages.
 
 ---
 
-*For API specifications, implementation details, and code examples, see [design.md](design.md).*
+*For technical specifications, see [design.md](design.md).*
