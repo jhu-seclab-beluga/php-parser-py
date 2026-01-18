@@ -116,3 +116,6 @@ Desktop.ini
 # Generated directories
 node_modules/
 dist/
+
+.cursor/
+.agent/
