@@ -167,9 +167,9 @@ class Runner:
 error_reporting(E_ALL & ~E_DEPRECATED);
 require_once 'phar://{phar_path}/vendor/autoload.php';
 
-use PhpParser\\\\ParserFactory;
-use PhpParser\\\\NodeDumper;
-use PhpParser\\\\ErrorHandler\\\\Collecting;
+use PhpParser\\ParserFactory;
+use PhpParser\\NodeDumper;
+use PhpParser\\ErrorHandler\\Collecting;
 
 $code = file_get_contents('php://stdin');
 $errorHandler = new Collecting();
@@ -203,8 +203,8 @@ try {{
 error_reporting(E_ALL & ~E_DEPRECATED);
 require_once 'phar://{phar_path}/vendor/autoload.php';
 
-use PhpParser\\\\JsonDecoder;
-use PhpParser\\\\PrettyPrinter\\\\Standard;
+use PhpParser\\JsonDecoder;
+use PhpParser\\PrettyPrinter\\Standard;
 
 $json = file_get_contents('php://stdin');
 
