@@ -51,18 +51,18 @@ class Runner:
                 f"PHP binary not found at {self._php_binary}", exit_code=1
             )
 
-    def execute(self, script: str, stdin: str) -> str:
-        """Execute PHP script with stdin input, return stdout.
+    def execute(self, script: str, stdin: str = "") -> str:
+        """Execute PHP script with optional stdin.
 
         Args:
-            script: PHP script content to execute.
-            stdin: Data to send to script's stdin.
+            script: PHP script code to execute.
+            stdin: Optional input to pass to script's stdin.
 
         Returns:
-            stdout content from PHP execution.
+            Script's stdout output.
 
         Raises:
-            RunnerError: If PHP execution fails with non-zero exit code.
+            RunnerError: If PHP execution fails.
         """
         try:
             result = subprocess.run(
@@ -74,8 +74,17 @@ class Runner:
             )
 
             if result.returncode != 0:
+                # Log complete error information
+                error_msg = f"PHP execution failed with exit code {result.returncode}"
+                if result.stderr:
+                    logger.error(f"PHP stderr: {result.stderr}")
+                    error_msg += f"\nStderr: {result.stderr}"
+                if result.stdout:
+                    logger.error(f"PHP stdout: {result.stdout}")
+                    error_msg += f"\nStdout: {result.stdout}"
+                
                 raise RunnerError(
-                    f"PHP execution failed with exit code {result.returncode}",
+                    error_msg,
                     stderr=result.stderr,
                     exit_code=result.returncode,
                 )
@@ -83,12 +92,19 @@ class Runner:
             return result.stdout
 
         except FileNotFoundError as e:
+            error_msg = f"PHP binary not found: {self._php_binary}"
+            logger.error(error_msg)
             raise RunnerError(
-                f"PHP binary not found: {self._php_binary}", stderr=str(e), exit_code=1
+                error_msg, stderr=str(e), exit_code=1
             ) from e
         except Exception as e:
+            error_msg = f"Failed to execute PHP script: {e}"
+            logger.error(error_msg)
+            # Don't wrap the error if it's already a RunnerError
+            if isinstance(e, RunnerError):
+                raise
             raise RunnerError(
-                f"Failed to execute PHP script: {e}", stderr=str(e), exit_code=1
+                error_msg, stderr=str(e), exit_code=1
             ) from e
 
     def parse(self, code: str) -> dict[str, Any]:
@@ -148,11 +164,12 @@ class Runner:
         """Build PHP script for parsing."""
         phar_path = self._vendor_dir / "php-parser.phar"
         return f"""
-require_once '{phar_path}';
+error_reporting(E_ALL & ~E_DEPRECATED);
+require_once 'phar://{phar_path}/vendor/autoload.php';
 
-use PhpParser\\ParserFactory;
-use PhpParser\\JsonSerializer;
-use PhpParser\\ErrorHandler\\Collecting;
+use PhpParser\\\\ParserFactory;
+use PhpParser\\\\NodeDumper;
+use PhpParser\\\\ErrorHandler\\\\Collecting;
 
 $code = file_get_contents('php://stdin');
 $errorHandler = new Collecting();
@@ -168,8 +185,11 @@ try {{
         echo json_encode(['errors' => $errors]);
         exit(1);
     }}
-    $serializer = new JsonSerializer();
-    echo $serializer->serialize($stmts);
+    $dumper = new NodeDumper([
+        'dumpComments' => true,
+        'dumpPositions' => true
+    ]);
+    echo json_encode($dumper->dump($stmts));
 }} catch (Exception $e) {{
     echo json_encode(['error' => $e->getMessage()]);
     exit(1);
@@ -180,20 +200,21 @@ try {{
         """Build PHP script for code generation."""
         phar_path = self._vendor_dir / "php-parser.phar"
         return f"""
-require_once '{phar_path}';
+error_reporting(E_ALL & ~E_DEPRECATED);
+require_once 'phar://{phar_path}/vendor/autoload.php';
 
-use PhpParser\\JsonDecoder;
-use PhpParser\\PrettyPrinter;
+use PhpParser\\\\JsonDecoder;
+use PhpParser\\\\PrettyPrinter\\\\Standard;
 
 $json = file_get_contents('php://stdin');
 
 try {{
     $decoder = new JsonDecoder();
     $stmts = $decoder->decode($json);
-    $printer = new PrettyPrinter\\Standard();
+    $printer = new Standard();
     echo $printer->prettyPrintFile($stmts);
 }} catch (Exception $e) {{
-    fwrite(STDERR, $e->getMessage());
+    echo json_encode(['error' => $e->getMessage()]);
     exit(1);
 }}
 """

@@ -4,10 +4,21 @@
  * Reads PHP code from stdin, parses it, and outputs JSON AST.
  */
 
-require_once __DIR__ . '/../vendor/php-parser.phar';
+// Suppress deprecation warnings for PHP 8.5 compatibility
+error_reporting(E_ALL & ~E_DEPRECATED);
+
+// Load PHP-Parser PHAR
+$pharPath = __DIR__ . '/../vendor/php-parser.phar';
+if (!file_exists($pharPath)) {
+    echo json_encode(['error' => 'PHP-Parser PHAR not found']);
+    exit(1);
+}
+
+// Include the PHAR autoloader
+require_once 'phar://' . $pharPath . '/vendor/autoload.php';
 
 use PhpParser\ParserFactory;
-use PhpParser\JsonSerializer;
+use PhpParser\NodeDumper;
 use PhpParser\ErrorHandler\Collecting;
 
 $code = file_get_contents('php://stdin');
@@ -24,9 +35,14 @@ try {
         echo json_encode(['errors' => $errors]);
         exit(1);
     }
-    $serializer = new JsonSerializer();
-    echo $serializer->serialize($stmts);
+    // Use NodeDumper to convert AST to array, then JSON encode
+    $dumper = new NodeDumper([
+        'dumpComments' => true,
+        'dumpPositions' => true
+    ]);
+    echo json_encode($dumper->dump($stmts));
 } catch (Exception $e) {
     echo json_encode(['error' => $e->getMessage()]);
     exit(1);
 }
+
