@@ -69,7 +69,7 @@ class Node(AbcNodeQuerier):
         Returns:
             Dictionary containing all properties from PHP-Parser JSON.
         """
-        return self._storage.get_node_properties(self._nid) or {}
+        return self.properties or {}
 
     # Dict-like access methods
 

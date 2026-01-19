@@ -168,7 +168,6 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 require_once 'phar://{phar_path}/vendor/autoload.php';
 
 use PhpParser\\ParserFactory;
-use PhpParser\\NodeDumper;
 use PhpParser\\ErrorHandler\\Collecting;
 
 $code = file_get_contents('php://stdin');
@@ -185,11 +184,8 @@ try {{
         echo json_encode(['errors' => $errors]);
         exit(1);
     }}
-    $dumper = new NodeDumper([
-        'dumpComments' => true,
-        'dumpPositions' => true
-    ]);
-    echo json_encode($dumper->dump($stmts));
+    // PHP-Parser nodes implement JsonSerializable, so we can encode them directly
+    echo json_encode($stmts);
 }} catch (Exception $e) {{
     echo json_encode(['error' => $e->getMessage()]);
     exit(1);

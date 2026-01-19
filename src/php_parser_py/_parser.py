@@ -135,26 +135,38 @@ class Parser:
                 # Nested object - will create child node
                 child_fields.append((key, value))
             elif isinstance(value, list):
-                # Array of children
-                child_fields.append((key, value))
+                # Check if it's an array of objects or scalars
+                if value and isinstance(value[0], dict):
+                    # Array of objects - create child nodes
+                    child_fields.append((key, value))
+                else:
+                    # Array of scalars (strings, numbers, etc.) - save as property
+                    properties[key] = value
             else:
                 # Scalar property
                 properties[key] = value
 
-        # Add node to storage
-        storage.add_node(node_id, properties)
+        # Add node to storage (cpg2py API: add_node takes only nid)
+        storage.add_node(node_id)
+        # Set properties separately
+        if properties:
+            storage.set_node_props(node_id, properties)
 
         # Create edge from parent if applicable
         if parent_id is not None and field_name is not None:
             edge_props = {"field": field_name}
             if index is not None:
                 edge_props["index"] = index
-            storage.add_edge(parent_id, node_id, "PARENT_OF", edge_props)
+            # add_edge takes edge_id as a tuple
+            edge_id = (parent_id, node_id, "PARENT_OF")
+            storage.add_edge(edge_id)
+            if edge_props:
+                storage.set_edge_props(edge_id, edge_props)
 
-        # Process child fields
+        # Process child fields (only object arrays now)
         for field_name, field_value in child_fields:
             if isinstance(field_value, list):
-                # Array of children
+                # Array of child objects
                 for idx, item in enumerate(field_value):
                     self._process_node(storage, item, node_id, field_name, idx)
             else:

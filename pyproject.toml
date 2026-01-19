@@ -4,11 +4,11 @@ version = "0.1.0"
 description = "Python wrapper for PHP-Parser using cpg2py"
 readme = "README.md"
 authors = [
-    { name = "SamHsu", email = "yxu166@jh.edu" }
+    { name = "samhsu-dev", email = "yxu166@jh.edu" }
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "cpg2py",
+    "cpg2py>=1.1.0",
 ]
 
 [build-system]

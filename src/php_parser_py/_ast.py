@@ -1,8 +1,10 @@
-"""AST graph class for PHP Abstract Syntax Trees."""
+"""AST representation for PHP code using cpg2py's graph framework."""
+
+from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Callable, Iterable, Optional
 
 from cpg2py import AbcGraphQuerier, Storage
 
@@ -12,11 +14,21 @@ from php_parser_py._node import Node
 logger = logging.getLogger(__name__)
 
 
-class AST(AbcGraphQuerier):
-    """Represents the complete PHP AST as a graph.
+class AST(AbcGraphQuerier[Node, Edge]):
+    """Represents a PHP Abstract Syntax Tree.
 
-    Extends cpg2py's AbcGraphQuerier to store PHP-Parser's JSON structure
-    in cpg2py Storage. Provides graph traversal methods and JSON reconstruction
+    This class extends cpg2py's AbcGraphQuerier with generic type parameters
+    specifying that it works with Node and Edge types.
+
+    The AST is stored as a graph in cpg2py Storage, where:
+    - Nodes represent PHP-Parser AST nodes (statements, expressions, etc.)
+    - Edges represent parent-child relationships with field names
+
+    Type Parameters:
+        Node: The concrete node type for PHP AST nodes
+        Edge: The concrete edge type for parent-child relationships
+
+    Provides graph traversal methods and JSON reconstruction
     for code generation.
 
     Attributes:
@@ -32,7 +44,7 @@ class AST(AbcGraphQuerier):
         super().__init__(storage)
         self._storage = storage
 
-    def node(self, whose_id_is: str) -> Node | None:
+    def node(self, whose_id_is: str) -> Optional[Node]:
         """Return node wrapper by ID.
 
         Args:
@@ -41,12 +53,12 @@ class AST(AbcGraphQuerier):
         Returns:
             Node instance or None if not found.
         """
-        if not self._storage.has_node(whose_id_is):
+        if not self._storage.contains_node(whose_id_is):
             return None
         return Node(self._storage, whose_id_is)
 
-    def edge(self, fid: str, tid: str, eid: str) -> Edge | None:
-        """Return edge wrapper by ID tuple.
+    def edge(self, fid: str, tid: str, eid: str) -> Optional[Edge]:
+        """Return edge wrapper by IDs.
 
         Args:
             fid: From node ID.
@@ -57,9 +69,9 @@ class AST(AbcGraphQuerier):
             Edge instance or None if not found.
         """
         edge_id = (fid, tid, eid)
-        if not self._storage.has_edge(edge_id):
+        if not self._storage.contains_edge(edge_id):
             return None
-        return Edge(self._storage, edge_id)
+        return Edge(self._storage, fid, tid, eid)
 
     def to_json(self) -> str:
         """Reconstruct PHP-Parser JSON from Storage for code generation.
@@ -77,10 +89,10 @@ class AST(AbcGraphQuerier):
 
     def _find_root_nodes(self) -> list[str]:
         """Find nodes with no incoming PARENT_OF edges."""
-        all_nodes = set(self._storage.get_all_node_ids())
+        all_nodes = set(self._storage.get_nodes())
         child_nodes = set()
 
-        for edge_id in self._storage.get_all_edge_ids():
+        for edge_id in self._storage.get_edges():
             _, to_id, edge_type = edge_id
             if edge_type == "PARENT_OF":
                 child_nodes.add(to_id)
@@ -90,7 +102,7 @@ class AST(AbcGraphQuerier):
 
     def _reconstruct_node(self, nid: str) -> dict[str, Any]:
         """Recursively reconstruct JSON object for a node."""
-        props = self._storage.get_node_properties(nid)
+        props = self._storage.get_node_props(nid)
         if props is None:
             return {}
 
@@ -119,9 +131,9 @@ class AST(AbcGraphQuerier):
             ):
                 attributes[key] = value
             else:
-                # Non-attribute scalar fields
-                if not isinstance(value, (dict, list)):
-                    result[key] = value
+                # All other fields (scalars, arrays, etc.) go directly in result
+                # Child nodes will be added separately via edges
+                result[key] = value
 
         if attributes:
             result["attributes"] = attributes
@@ -129,12 +141,12 @@ class AST(AbcGraphQuerier):
         # Reconstruct child nodes from PARENT_OF edges
         outgoing_edges = [
             eid
-            for eid in self._storage.get_all_edge_ids()
+            for eid in self._storage.get_edges()
             if eid[0] == nid and eid[2] == "PARENT_OF"
         ]
 
         for from_id, to_id, edge_type in outgoing_edges:
-            edge_props = self._storage.get_edge_properties((from_id, to_id, edge_type))
+            edge_props = self._storage.get_edge_props((from_id, to_id, edge_type))
             if edge_props is None:
                 continue
 
@@ -164,4 +176,15 @@ class AST(AbcGraphQuerier):
                     array[idx] = child
                 result[field_name] = array
 
+        # Add default values for common optional fields that PHP-Parser expects
+        # These prevent "null given, array expected" errors in PrettyPrinter
+        # attrGroups is required for many node types in PHP 8+
+        if node_type and ("attrGroups" not in result):
+            # Most node types that can have attributes need attrGroups
+            if (node_type.startswith("Stmt_") or 
+                node_type == "Param" or
+                node_type.startswith("Expr_Closure") or
+                node_type.startswith("Expr_ArrowFunction")):
+                result["attrGroups"] = []
+        
         return result

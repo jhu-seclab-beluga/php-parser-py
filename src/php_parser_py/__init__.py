@@ -14,6 +14,8 @@ ensure_php_parser_extracted()
 
 # Import and expose public classes directly
 from php_parser_py._ast import AST
+from php_parser_py._node import Node
+from php_parser_py._edge import Edge
 from php_parser_py.exceptions import ParseError, RunnerError
 
 
@@ -73,6 +75,8 @@ def parse_file(path: str) -> AST:
 __version__ = "0.1.0"
 __all__ = [
     "AST",
+    "Node",
+    "Edge",
     "Parser",
     "PrettyPrinter",
     "ParseError",

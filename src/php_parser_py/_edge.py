@@ -20,16 +20,18 @@ class Edge(AbcEdgeQuerier):
         _edge_id: Tuple of (from_id, to_id, edge_type).
     """
 
-    def __init__(self, storage: Storage, edge_id: tuple[str, str, str]) -> None:
-        """Initialize Edge with storage reference and edge ID.
+    def __init__(self, graph: Storage, f_nid: str, t_nid: str, e_type: str = "PARENT_OF") -> None:
+        """Initialize Edge with storage and edge identifiers.
 
         Args:
-            storage: cpg2py Storage instance containing edge data.
-            edge_id: Tuple of (from_id, to_id, edge_type).
+            graph: cpg2py Storage containing the graph.
+            f_nid: From node ID.
+            t_nid: To node ID.
+            e_type: Edge type (default: "PARENT_OF").
         """
-        super().__init__(storage, edge_id)
-        self._storage = storage
-        self._edge_id = edge_id
+        super().__init__(graph, f_nid, t_nid, e_type)
+        self._storage = graph
+        self._edge_id = (str(f_nid), str(t_nid), str(e_type))
 
     # Core properties
 
@@ -52,7 +54,7 @@ class Edge(AbcEdgeQuerier):
         Returns:
             Field name string or None.
         """
-        props = self._storage.get_edge_properties(self._edge_id)
+        props = self._storage.get_edge_props(self._edge_id)
         if props is None:
             return None
         return props.get("field")
@@ -67,7 +69,7 @@ class Edge(AbcEdgeQuerier):
         Returns:
             Integer index or None if not an array element.
         """
-        props = self._storage.get_edge_properties(self._edge_id)
+        props = self._storage.get_edge_props(self._edge_id)
         if props is None:
             return None
         return props.get("index")
@@ -79,7 +81,7 @@ class Edge(AbcEdgeQuerier):
         Returns:
             Dictionary of edge properties.
         """
-        return self._storage.get_edge_properties(self._edge_id) or {}
+        return self._storage.get_edge_props(self._edge_id) or {}
 
     # Dict-like access methods
 
