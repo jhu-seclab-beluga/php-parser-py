@@ -52,12 +52,19 @@ class TestAST:
         assert result is None
 
     def test_to_json(self, simple_php_code):
-        """Test to_json() reconstructs PHP-Parser JSON."""
+        """Test JSON reconstruction."""
+        import json
+
         parser = Parser()
         ast = parser.parse(simple_php_code)
+        json_str = ast.to_json()
+        assert isinstance(json_str, str)
         
-        json_data = ast.to_json()
-        assert isinstance(json_data, (list, dict))
+        # Parse the JSON string
+        json_data = json.loads(json_str)
+        assert isinstance(json_data, list)
+        assert len(json_data) > 0
+        assert json_data[0]["nodeType"] == "Stmt_Echo"
 
     def test_node_count(self, class_php_code):
         """Test counting different node types."""

@@ -11,9 +11,10 @@ class TestNode:
 
     @pytest.fixture
     def storage_with_node(self):
-        """Create storage with a test node."""
+        """Create a storage with a test node."""
         storage = Storage()
-        storage.add_node(
+        storage.add_node("test_node_1")
+        storage.set_node_props(
             "test_node_1",
             {
                 "nodeType": "Stmt_Function",

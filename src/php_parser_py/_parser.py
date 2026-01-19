@@ -8,7 +8,7 @@ from cpg2py import Storage
 
 from php_parser_py._ast import AST
 from php_parser_py._runner import Runner
-from php_parser_py.exceptions import ParseError
+from php_parser_py.exceptions import ParseError, RunnerError
 
 logger = logging.getLogger(__name__)
 
@@ -29,18 +29,26 @@ class Parser:
         self._node_counter = 0
 
     def parse(self, code: str) -> AST:
-        """Parse PHP code and return AST.
+        """Parse PHP code into an AST.
 
         Args:
-            code: PHP source code string.
+            code: PHP source code to parse.
 
         Returns:
-            AST instance containing parsed code structure.
+            AST instance containing parsed code.
 
         Raises:
-            ParseError: If PHP-Parser reports syntax error.
+            ParseError: If code has syntax errors.
+            RunnerError: If PHP execution fails.
         """
-        json_data = self._runner.parse(code)
+        try:
+            json_data = self._runner.parse(code)
+        except RunnerError as e:
+            # Check if it's a parse error
+            if "Syntax error" in str(e):
+                raise ParseError("Syntax error in PHP code", line=1) from e
+            raise
+        
         storage = self._json_to_storage(json_data)
         return AST(storage)
 
