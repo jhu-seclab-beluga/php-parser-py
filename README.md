@@ -148,3 +148,4 @@ MIT License - see LICENSE file for details.
 For detailed design documentation, see:
 - [Design Document](docs/design.md)
 - [Idea Document](docs/idea.md)
+- [API Demo](docs/api_demo.ipynb)
