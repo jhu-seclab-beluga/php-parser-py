@@ -2,10 +2,12 @@
 
 import json
 import logging
-import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+from static_php_py import PHP
+from static_php_py.exceptions import BinaryNotFoundError, DownloadError
 
 from php_parser_py._resources import ensure_php_parser_extracted
 from php_parser_py.exceptions import ParseError, RunnerError
@@ -21,30 +23,51 @@ class Runner:
 
     Attributes:
         _php_binary: Path to PHP binary.
-        _scripts_dir: Path to directory containing PHP scripts.
         _vendor_dir: Path to directory containing PHP-Parser PHAR.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        php_binary_path: Optional[Path] = None,
+        php_binary_url: Optional[str] = None,
+    ) -> None:
         """Initialize Runner with PHP binary and PHP-Parser paths.
+
+        Args:
+            php_binary_path: Optional path to local PHP binary.
+            php_binary_url: Optional URL to download PHP binary from.
 
         Raises:
             RunnerError: If PHP binary or PHP-Parser cannot be located.
         """
         self._vendor_dir = ensure_php_parser_extracted()
 
-        # Locate PHP binary from system PATH
-        php_path = shutil.which("php")
-        if php_path is None:
+        # Determine PHP binary source with priority: custom path > custom URL > built-in
+        try:
+            if php_binary_path is not None:
+                # Use custom local PHP binary
+                php = PHP.local(php_binary_path)
+            elif php_binary_url is not None:
+                # Download PHP binary from custom URL
+                php = PHP.remote(php_binary_url)
+            else:
+                # Use built-in PHP binary from static-php-py
+                php = PHP.builtin()
+
+            self._php_binary = php.path()
+
+        except BinaryNotFoundError as e:
             raise RunnerError(
-                "PHP binary not found in system PATH. Please install PHP.", exit_code=1
-            )
-
-        self._php_binary = Path(php_path)
-
-        # Locate scripts directory
-        module_dir = Path(__file__).parent
-        self._scripts_dir = module_dir / "scripts"
+                f"PHP binary not found: {e}. "
+                "The built-in PHP binary may not be available for your platform. "
+                "Please provide a custom PHP binary path or URL.",
+                exit_code=1,
+            ) from e
+        except DownloadError as e:
+            raise RunnerError(
+                f"Failed to download PHP binary: {e}",
+                exit_code=1,
+            ) from e
 
         if not self._php_binary.exists():
             raise RunnerError(

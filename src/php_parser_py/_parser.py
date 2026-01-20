@@ -1,8 +1,9 @@
 """Parser class for PHP code parsing."""
 
+import hashlib
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from cpg2py import Storage
 
@@ -23,16 +24,30 @@ class Parser:
         _runner: Runner instance for PHP-Parser invocation.
     """
 
-    def __init__(self) -> None:
-        """Initialize Parser with Runner."""
-        self._runner = Runner()
+    def __init__(
+        self,
+        php_binary_path: Optional[Path] = None,
+        php_binary_url: Optional[str] = None,
+    ) -> None:
+        """Initialize Parser with Runner.
+        
+        Args:
+            php_binary_path: Optional path to local PHP binary.
+            php_binary_url: Optional URL to download PHP binary from.
+        """
+        self._runner = Runner(
+            php_binary_path=php_binary_path,
+            php_binary_url=php_binary_url,
+        )
         self._node_counter = 0
 
-    def parse(self, code: str) -> AST:
+    def parse(self, code: str, prefix: str = "") -> AST:
         """Parse PHP code into an AST.
 
         Args:
             code: PHP source code to parse.
+            prefix: Optional prefix for node IDs. Useful for distinguishing
+                   nodes from different files when merging multiple ASTs.
 
         Returns:
             AST instance containing parsed code.
@@ -41,6 +56,10 @@ class Parser:
             ParseError: If code has syntax errors.
             RunnerError: If PHP execution fails.
         """
+        # Reset node counter for each parse
+        self._node_counter = 0
+        self._node_id_prefix = prefix
+        
         try:
             json_data = self._runner.parse(code)
         except RunnerError as e:
@@ -52,11 +71,13 @@ class Parser:
         storage = self._json_to_storage(json_data)
         return AST(storage)
 
-    def parse_file(self, path: str) -> AST:
+    def parse_file(self, path: str, prefix: str | None = None) -> AST:
         """Read and parse PHP file.
 
         Args:
             path: File path string.
+            prefix: Optional prefix for node IDs. If not provided,
+                   uses a hash of the file path (first 6 chars).
 
         Returns:
             AST instance containing parsed code structure.
@@ -69,23 +90,25 @@ class Parser:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
 
-        code = file_path.read_text(encoding="utf-8")
-        return self.parse(code)
+        # Use file path hash as default prefix if none provided
+        if prefix is None:
+            # Generate a short hash from the file path
+            path_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:6]
+            prefix = path_hash
 
-    def _json_to_storage(self, json_data: list | dict) -> Storage:
+        code = file_path.read_text(encoding="utf-8")
+        return self.parse(code, prefix=prefix)
+
+    def _json_to_storage(self, json_data: Any) -> Storage:
         """Convert PHP-Parser JSON to cpg2py Storage.
 
-        Recursively processes the JSON structure, creating nodes for each
-        object with nodeType and edges for parent-child relationships.
-
         Args:
-            json_data: Parsed JSON data from PHP-Parser.
+            json_data: JSON data from PHP-Parser.
 
         Returns:
-            Populated Storage instance.
+            Storage instance containing the AST graph.
         """
         storage = Storage()
-        self._node_counter = 0
 
         # Handle both single node and array of nodes
         if isinstance(json_data, list):

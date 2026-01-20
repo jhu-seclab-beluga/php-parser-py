@@ -1,6 +1,8 @@
 """PrettyPrinter class for PHP code generation."""
 
 import logging
+from pathlib import Path
+from typing import Optional
 
 from php_parser_py._ast import AST
 from php_parser_py._runner import Runner
@@ -18,9 +20,21 @@ class PrettyPrinter:
         _runner: Runner instance for PHP-Parser invocation.
     """
 
-    def __init__(self) -> None:
-        """Initialize PrettyPrinter with Runner."""
-        self._runner = Runner()
+    def __init__(
+        self,
+        php_binary_path: Optional[Path] = None,
+        php_binary_url: Optional[str] = None,
+    ) -> None:
+        """Initialize PrettyPrinter with Runner.
+        
+        Args:
+            php_binary_path: Optional path to local PHP binary.
+            php_binary_url: Optional URL to download PHP binary from.
+        """
+        self._runner = Runner(
+            php_binary_path=php_binary_path,
+            php_binary_url=php_binary_url,
+        )
 
     def print(self, ast: AST) -> str:
         """Generate PHP code from AST.

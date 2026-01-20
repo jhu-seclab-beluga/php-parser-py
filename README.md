@@ -9,16 +9,19 @@ Python wrapper for PHP-Parser using cpg2py's graph framework.
 ## Features
 
 - **Native PHP-Parser Integration**: Delegates all parsing and code generation to PHP-Parser for maximum compatibility
+- **Zero-Configuration PHP**: Bundled PHP binaries via static-php-py - no system PHP installation required
 - **Graph-Based Analysis**: Uses cpg2py's graph framework for AST traversal and querying
 - **Dynamic Node Types**: No hardcoded PHP node types - all types come from PHP-Parser's JSON output
 - **Lossless Round-Trip**: Parse → Modify → Generate code with full fidelity
-- **System PHP**: Uses your system's PHP installation (no bundled binaries)
+- **Cross-Platform Support**: Pre-built PHP 8.4 binaries for Linux (x86_64/aarch64), macOS (x86_64/arm64), and Windows (x64)
 
 ## Installation
 
 ```bash
 pip install php-parser-py
 ```
+
+**Note**: Platform-specific wheels include pre-built PHP 8.4 binaries. No separate PHP installation required!
 
 ## Quick Start
 
@@ -83,6 +86,25 @@ generated_code = printer.print(ast)
 print(generated_code)
 ```
 
+## Advanced Usage
+
+### Custom PHP Binary
+
+If you need to use a specific PHP version or custom binary:
+
+```python
+from php_parser_py import Parser
+from pathlib import Path
+
+# Use local PHP binary
+parser = Parser(php_binary_path=Path("/usr/local/bin/php"))
+ast = parser.parse("<?php echo 'hello';")
+
+# Or download from remote URL
+parser = Parser(php_binary_url="https://example.com/php-8.4.zip")
+ast = parser.parse("<?php echo 'hello';")
+```
+
 ## API Reference
 
 ### Main Functions
@@ -107,10 +129,18 @@ print(generated_code)
   - `get_property(*names)`: Get property value
 
 - **`Parser`**: Parses PHP code
-  - `parse(code)`: Parse code string
-  - `parse_file(path)`: Parse file
+  - `__init__(php_binary_path=None, php_binary_url=None)`: Initialize parser
+    - `php_binary_path`: Optional path to local PHP binary
+    - `php_binary_url`: Optional URL to download PHP binary from
+  - `parse(code, prefix="")`: Parse code string
+    - `prefix`: Optional prefix for node IDs (useful for multi-file parsing)
+  - `parse_file(path, prefix=None)`: Parse file
+    - `prefix`: Optional prefix (auto-generated from file path if not provided)
 
 - **`PrettyPrinter`**: Generates PHP code
+  - `__init__(php_binary_path=None, php_binary_url=None)`: Initialize printer
+    - `php_binary_path`: Optional path to local PHP binary
+    - `php_binary_url`: Optional URL to download PHP binary from
   - `print(ast)`: Generate code from AST
 
 ### Exceptions
@@ -135,9 +165,7 @@ This design ensures:
 
 - Python >= 3.11
 - cpg2py
-- PHP (system installation)
-
-**Note**: PHP must be installed and available in your system PATH. The library will automatically detect and use your system PHP binary.
+- static-php-py (bundled PHP binaries)
 
 ## License
 

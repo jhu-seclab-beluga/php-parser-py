@@ -141,10 +141,21 @@ json_str = ast.to_json()
 
 - **Properties**:
   - `_runner: Runner` - PHP binary execution handler
+  - `_node_counter: int` - Counter for generating unique node IDs
+  - `_node_id_prefix: str` - Optional prefix for node IDs
 
-- **[parse(code: str) -> AST]**
+- **[__init__(self, php_binary_path: Optional[Path] = None, php_binary_url: Optional[str] = None) -> None]**
+  - **Behavior**: Initializes Parser with Runner and optional PHP binary configuration
+  - **Input**: 
+    - `php_binary_path`: Optional path to local PHP binary
+    - `php_binary_url`: Optional URL to download PHP binary from
+  - **Note**: If no PHP binary is specified, uses bundled PHP from static-php-py
+
+- **[parse(code: str, prefix: str = "") -> AST]**
   - **Behavior**: Parses PHP code via PHP-Parser, populates cpg2py Storage from JSON
-  - **Input**: PHP source code string
+  - **Input**: 
+    - `code`: PHP source code string
+    - `prefix`: Optional prefix for node IDs (useful for multi-file parsing)
   - **Output**: AST instance
   - **Raises**: `ParseError` if PHP-Parser reports syntax error
   - **PHP Script Used**:
@@ -161,9 +172,9 @@ json_str = ast.to_json()
     echo $serializer->serialize($stmts);
     ```
 
-- **[parse_file(path: str) -> AST]**
-  - **Behavior**: Reads file and parses content
-  - **Input**: File path string
+- **[parse_file(path: str, node_id_prefix: str | None = None) -> AST]**
+  - **Behavior**: Reads file and parses content with optional node ID prefix
+  - **Input**: File path string, optional node ID prefix (defaults to hash of file path)
   - **Output**: AST instance
   - **Raises**: `ParseError`, `FileNotFoundError`
 
@@ -185,6 +196,13 @@ json_str = ast.to_json()
 
 - **Properties**:
   - `_runner: Runner` - PHP binary execution handler
+
+- **[__init__(self, php_binary_path: Optional[Path] = None, php_binary_url: Optional[str] = None) -> None]**
+  - **Behavior**: Initializes PrettyPrinter with Runner and optional PHP binary configuration
+  - **Input**:
+    - `php_binary_path`: Optional path to local PHP binary
+    - `php_binary_url`: Optional URL to download PHP binary from
+  - **Note**: If no PHP binary is specified, uses bundled PHP from static-php-py
 
 - **[print(ast: AST) -> str]**
   - **Behavior**: Reconstructs JSON from AST, invokes PHP-Parser to generate code
@@ -212,8 +230,16 @@ json_str = ast.to_json()
 - **Responsibility**: Manages PHP-Parser invocation via static-php-py.
 
 - **Properties**:
-  - `_php_binary: Path` - Path to static PHP binary (from static-php-py)
-  - `_phar_path: Path` - Path to PHP-Parser PHAR file
+  - `_php_binary: Path` - Path to PHP binary (from static-php-py or custom)
+  - `_vendor_dir: Path` - Path to directory containing extracted PHP-Parser PHAR
+
+- **[__init__(self, php_binary_path: Optional[Path] = None, php_binary_url: Optional[str] = None) -> None]**
+  - **Behavior**: Initializes Runner with PHP binary from static-php-py or custom source
+  - **Input**:
+    - `php_binary_path`: Optional path to local PHP binary
+    - `php_binary_url`: Optional URL to download PHP binary from
+  - **Priority**: custom path > custom URL > built-in binary from static-php-py
+  - **Raises**: `RunnerError` if PHP binary cannot be obtained
 
 - **[execute(script: str, stdin: str) -> str]**
   - **Behavior**: Executes PHP script with stdin input, returns stdout
@@ -227,11 +253,15 @@ json_str = ast.to_json()
   - **Output**: Parsed JSON as dict
   - **Raises**: `ParseError` if syntax error (extracted from PHP-Parser output)
 
-- **[print(ast_json: str) -> str]**
-  - **Behavior**: Invokes PHP-Parser JsonDecoder + PrettyPrinter
-  - **Input**: AST JSON string
-  - **Output**: PHP source code
-  - **Raises**: `RunnerError` if fails
+- **[_build_parse_script(self) -> str]** (internal)
+  - **Behavior**: Generates inline PHP script for parsing
+  - **Output**: PHP script string for execution via `php -r`
+  - **Note**: Script uses PHP-Parser's ParserFactory and JsonSerializer
+
+- **[_build_print_script(self) -> str]** (internal)
+  - **Behavior**: Generates inline PHP script for code generation
+  - **Output**: PHP script string for execution via `php -r`
+  - **Note**: Script uses PHP-Parser's JsonDecoder and PrettyPrinter
 
 ---
 
@@ -357,22 +387,19 @@ php_parser_py/
 │   └── php_parser_py/
 │       ├── __init__.py          # Public API: parse, parse_file
 │       ├── _resources.py        # Resource extraction and management
-│       ├── ast.py               # AST (extends AbcGraphQuerier)
-│       ├── node.py              # Node (extends AbcNodeQuerier)
-│       ├── edge.py              # Edge (extends AbcEdgeQuerier)
-│       ├── parser.py            # Parser class with JSON-to-Storage mapping
-│       ├── printer.py           # PrettyPrinter class with Storage-to-JSON
-│       ├── runner.py            # Runner class for PHP-Parser invocation
+│       ├── _ast.py              # AST (extends AbcGraphQuerier)
+│       ├── _node.py             # Node (extends AbcNodeQuerier)
+│       ├── _edge.py             # Edge (extends AbcEdgeQuerier)
+│       ├── _parser.py           # Parser class with JSON-to-Storage mapping
+│       ├── _printer.py          # PrettyPrinter class with Storage-to-JSON
+│       ├── _runner.py           # Runner class for PHP-Parser invocation
 │       ├── exceptions.py        # ParseError, RunnerError
 │       ├── resources/
 │       │   └── php-parser-4.19.4.zip  # Bundled PHP-Parser (extracted at runtime)
-│       ├── vendor/              # Created at runtime (gitignored)
-│       │   ├── .extracted       # Marker file with zip hash
-│       │   ├── php-parser.phar  # Extracted PHP-Parser PHAR
-│       │   └── LICENSE.txt      # PHP-Parser license
-│       └── scripts/
-│           ├── parse.php        # PHP script for parsing
-│           └── print.php        # PHP script for code generation
+│       └── vendor/              # Created at runtime (gitignored)
+│           ├── .extracted       # Marker file with zip hash
+│           ├── php-parser.phar  # Extracted PHP-Parser PHAR
+│           └── LICENSE.txt      # PHP-Parser license
 ├── docs/
 │   ├── design.md
 │   └── idea.md
@@ -381,17 +408,17 @@ php_parser_py/
 
 ---
 
-## PHP Scripts
+## Inline PHP Scripts
 
-### parse.php
+PHP scripts are generated inline by Runner methods and executed via `php -r`:
+
+### Parse Script (generated by _build_parse_script)
 
 ```php
-<?php
-// Bundled with PHP-Parser PHAR
-require_once __DIR__ . '/php-parser.phar';
+error_reporting(E_ALL & ~E_DEPRECATED);
+require_once 'phar://{phar_path}/vendor/autoload.php';
 
 use PhpParser\ParserFactory;
-use PhpParser\JsonSerializer;
 use PhpParser\ErrorHandler\Collecting;
 
 $code = file_get_contents('php://stdin');
@@ -408,32 +435,32 @@ try {
         echo json_encode(['errors' => $errors]);
         exit(1);
     }
-    $serializer = new JsonSerializer();
-    echo $serializer->serialize($stmts);
+    // PHP-Parser nodes implement JsonSerializable
+    echo json_encode($stmts);
 } catch (Exception $e) {
     echo json_encode(['error' => $e->getMessage()]);
     exit(1);
 }
 ```
 
-### print.php
+### Print Script (generated by _build_print_script)
 
 ```php
-<?php
-require_once __DIR__ . '/php-parser.phar';
+error_reporting(E_ALL & ~E_DEPRECATED);
+require_once 'phar://{phar_path}/vendor/autoload.php';
 
 use PhpParser\JsonDecoder;
-use PhpParser\PrettyPrinter;
+use PhpParser\PrettyPrinter\Standard;
 
 $json = file_get_contents('php://stdin');
 
 try {
     $decoder = new JsonDecoder();
     $stmts = $decoder->decode($json);
-    $printer = new PrettyPrinter\Standard();
+    $printer = new Standard();
     echo $printer->prettyPrintFile($stmts);
 } catch (Exception $e) {
-    fwrite(STDERR, $e->getMessage());
+    echo json_encode(['error' => $e->getMessage()]);
     exit(1);
 }
 ```
@@ -457,3 +484,9 @@ try {
 - Provides graph traversal infrastructure
 - Enables integration with multi-language analysis pipelines
 - Familiar API for cpg2py users
+
+**Why static-php-py?**
+- Zero-configuration installation - no system PHP required
+- Cross-platform support with pre-built binaries
+- Flexible - supports custom PHP binaries when needed
+- Self-contained distribution

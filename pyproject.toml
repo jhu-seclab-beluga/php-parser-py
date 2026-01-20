@@ -1,6 +1,6 @@
 [project]
 name = "php-parser-py"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python wrapper for PHP-Parser using cpg2py"
 readme = "README.md"
 authors = [
@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "cpg2py>=1.1.0",
+    "static-php-py",
 ]
 
 [build-system]
@@ -21,3 +22,8 @@ package = true
 [tool.uv.build-backend]
 # Include resources directory in package data
 source-include = ["resources/*.zip"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
