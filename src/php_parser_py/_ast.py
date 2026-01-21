@@ -213,12 +213,12 @@ class AST(AbcGraphQuerier[Node, Edge]):
                 # Exclude project node if it exists
                 all_nodes = set(self._storage.get_nodes())
                 nodes_with_parents = set()
-                
+
                 for edge_id in self._storage.get_edges():
                     from_id, to_id, edge_type = edge_id
                     if edge_type == "PARENT_OF":
                         nodes_with_parents.add(to_id)
-                
+
                 root_nodes = all_nodes - nodes_with_parents
                 # Exclude project node if present
                 root_nodes.discard(self._root_node_id)

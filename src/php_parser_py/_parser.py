@@ -94,7 +94,7 @@ class Parser:
             if "Syntax error" in str(e):
                 raise ParseError("Syntax error in PHP code", line=1) from e
             raise
-
+        
         # Normalize to list
         if not isinstance(json_data, list):
             json_data = [json_data]

@@ -41,7 +41,7 @@ nodes = parse_code(code)
 # Returns list of Node instances (no project/file structure)
 
 for node in nodes:
-    print(f"Node type: {node.label}")
+    print(f"Node type: {node.node_type}")
 ```
 
 ### Parse PHP File (With Project Structure)
@@ -58,7 +58,7 @@ files = ast.files()
 print(f"Project has {len(files)} file(s)")
 
 # Get file containing a specific node
-stmt_node = ast.first_node(lambda n: n.label == "Stmt_Function")
+stmt_node = ast.first_node(lambda n: n.node_type == "Stmt_Function")
 file_node = ast.get_file(stmt_node.id)
 print(f"Function is in file: {file_node.get_property('filePath')}")
 ```
@@ -75,8 +75,8 @@ ast = parse_project(["file1.php", "file2.php", "file3.php"])
 for file_node in ast.files():
     print(f"File: {file_node.get_property('filePath')}")
     # Get statements in this file
-    for stmt in ast.children(file_node):
-        print(f"  Statement: {stmt.label}")
+    for stmt in ast.succ(file_node):
+        print(f"  Statement: {stmt.node_type}")
 
 # Access project and file paths
 ast = parse_project(["file1.php", "subdir/file2.php"])
@@ -96,19 +96,19 @@ from php_parser_py import parse_file
 ast = parse_file("example.php")
 
 # Find all echo statements
-for echo in ast.nodes(lambda n: n.label == "Stmt_Echo"):
-    print(f"Echo at line {echo.get_property('startLine')}")
+for echo in ast.nodes(lambda n: n.node_type == "Stmt_Echo"):
+    print(f"Echo at line {echo.start_line}")
 
 # Get children of a node (via PARENT_OF edges)
 for child in ast.succ(some_node):
-    print(f"Child type: {child.label}")
+    print(f"Child type: {child.node_type}")
 
 # Get all descendants
 for descendant in ast.descendants(some_node):
-    print(f"Descendant: {descendant.label}")
+    print(f"Descendant: {descendant.node_type}")
 
 # Get file containing a node
-stmt_node = ast.first_node(lambda n: n.label == "Stmt_Function")
+stmt_node = ast.first_node(lambda n: n.node_type == "Stmt_Function")
 file_node = ast.get_file(stmt_node.id)
 if file_node:
     print(f"Function is in: {file_node.get_property('filePath')}")
@@ -189,10 +189,12 @@ ast = parser.parse("<?php echo 'hello';")
 
 - **`Node`**: Wraps a single AST node
   - `id`: Node identifier
-  - `label`: Node type (e.g., "Stmt_Function")
-  - `node_type`: Alias for label (PHP-Parser node type)
-  - `properties`: All node properties
+  - `node_type`: Node type (e.g., "Stmt_Function") - returns `nodeType` property
+  - `all_properties`: All node properties as dict
   - `get_property(*names)`: Get property value
+  - `start_line`, `end_line`: Line number properties
+  - `__getitem__(key)`: Dict-like access (e.g., `node["name"]`)
+  - `get(key, default)`: Get property with default value
 
 - **`Parser`**: Parses PHP code
   - `__init__(php_binary_path=None, php_binary_url=None)`: Initialize parser
