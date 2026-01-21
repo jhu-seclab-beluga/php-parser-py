@@ -21,9 +21,12 @@ class TestPrettyPrinter:
         ast = parser.parse(simple_php_code)
         generated = printer.print(ast)
         
-        assert isinstance(generated, str)
-        assert "<?php" in generated
-        assert "echo" in generated
+        assert isinstance(generated, dict)
+        assert len(generated) > 0
+        # Get first (and likely only) file's code
+        code = list(generated.values())[0]
+        assert "<?php" in code
+        assert "echo" in code
 
     def test_print_function(self, function_php_code):
         """Test printing PHP function."""
@@ -33,9 +36,11 @@ class TestPrettyPrinter:
         ast = parser.parse(function_php_code)
         generated = printer.print(ast)
         
-        assert "function" in generated
-        assert "greet" in generated
-        assert "echo" in generated
+        assert isinstance(generated, dict)
+        code = list(generated.values())[0]
+        assert "function" in code
+        assert "greet" in code
+        assert "echo" in code
 
     def test_print_class(self, class_php_code):
         """Test printing PHP class."""
@@ -45,9 +50,11 @@ class TestPrettyPrinter:
         ast = parser.parse(class_php_code)
         generated = printer.print(ast)
         
-        assert "class" in generated
-        assert "User" in generated
-        assert "__construct" in generated
+        assert isinstance(generated, dict)
+        code = list(generated.values())[0]
+        assert "class" in code
+        assert "User" in code
+        assert "__construct" in code
 
     def test_roundtrip_simple(self, simple_php_code):
         """Test round-trip: parse → print → parse."""
@@ -58,8 +65,11 @@ class TestPrettyPrinter:
         ast1 = parser.parse(simple_php_code)
         generated = printer.print(ast1)
         
+        # Get code from dict
+        code = list(generated.values())[0]
+        
         # Second parse
-        ast2 = parser.parse(generated)
+        ast2 = parser.parse(code)
         
         # Should have same number of nodes
         nodes1 = list(ast1.nodes())
@@ -73,7 +83,8 @@ class TestPrettyPrinter:
         
         ast1 = parser.parse(function_php_code)
         generated = printer.print(ast1)
-        ast2 = parser.parse(generated)
+        code = list(generated.values())[0]
+        ast2 = parser.parse(code)
         
         # Should have same function
         funcs1 = list(ast1.nodes(lambda n: n.node_type == "Stmt_Function"))
@@ -87,7 +98,8 @@ class TestPrettyPrinter:
         
         ast1 = parser.parse(class_php_code)
         generated = printer.print(ast1)
-        ast2 = parser.parse(generated)
+        code = list(generated.values())[0]
+        ast2 = parser.parse(code)
         
         # Should have same class
         classes1 = list(ast1.nodes(lambda n: n.node_type == "Stmt_Class"))

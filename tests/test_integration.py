@@ -29,7 +29,9 @@ class TestIntegration:
         # Print
         printer = PrettyPrinter()
         generated = printer.print(ast)
-        assert "function" in generated
+        assert isinstance(generated, dict)
+        code = list(generated.values())[0]
+        assert "function" in code
 
     def test_multiple_parses(self, simple_php_code, function_php_code):
         """Test parsing multiple code samples."""
@@ -71,9 +73,11 @@ class TestIntegration:
         
         # Generate code
         generated = printer.print(ast1)
+        assert isinstance(generated, dict)
+        code = list(generated.values())[0]
         
         # Parse generated
-        ast2 = parser.parse(generated)
+        ast2 = parser.parse(code)
         
         # Compare node counts
         nodes1 = list(ast1.nodes())

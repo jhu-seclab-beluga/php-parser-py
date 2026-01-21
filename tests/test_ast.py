@@ -87,3 +87,77 @@ class TestAST:
         # Should find echo statement inside function
         echos = list(ast.nodes(lambda n: n.node_type == "Stmt_Echo"))
         assert len(echos) >= 1
+
+    def test_project_node_properties(self, tmp_path):
+        """Test project node has path property."""
+        import tempfile
+        import os
+        from pathlib import Path
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.php', delete=False) as f:
+            f.write('<?php function test() {}')
+            temp_file = f.name
+        
+        try:
+            parser = Parser()
+            ast = parser.parse_file(temp_file)
+            
+            project = ast.project_node
+            assert project is not None
+            assert project.get_property("nodeType") == "Project"
+            assert project.get_property("path") is not None
+        finally:
+            os.unlink(temp_file)
+
+    def test_files_method(self, tmp_path):
+        """Test files() method returns file nodes."""
+        import tempfile
+        import os
+        from pathlib import Path
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.php', delete=False) as f:
+            f.write('<?php function test() {}')
+            temp_file = f.name
+        
+        try:
+            parser = Parser()
+            ast = parser.parse_file(temp_file)
+            
+            files = ast.files()
+            assert len(files) == 1
+            
+            file_node = files[0]
+            assert file_node.get_property("nodeType") == "File"
+            assert file_node.get_property("path") is not None
+            assert file_node.get_property("filePath") is not None
+        finally:
+            os.unlink(temp_file)
+
+    def test_get_file_method(self, tmp_path):
+        """Test get_file() method."""
+        import tempfile
+        import os
+        from pathlib import Path
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.php', delete=False) as f:
+            f.write('<?php function test() {}')
+            temp_file = f.name
+        
+        try:
+            parser = Parser()
+            ast = parser.parse_file(temp_file)
+            
+            # Get a statement node
+            func_node = ast.first_node(lambda n: n.node_type == "Stmt_Function")
+            assert func_node is not None
+            
+            # Get file containing this node
+            file_node = ast.get_file(func_node.id)
+            assert file_node is not None
+            assert file_node.get_property("nodeType") == "File"
+            
+            # Project node should return None
+            project_file = ast.get_file("project")
+            assert project_file is None
+        finally:
+            os.unlink(temp_file)

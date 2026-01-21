@@ -4,7 +4,7 @@
 
 **Problem Statement**
 
-Python-based static analysis tools for PHP require Abstract Syntax Tree representations that integrate with graph-based analysis frameworks. Existing solutions either lack complete AST fidelity or require external PHP installations. This project bridges PHP-Parser's native capabilities with cpg2py's graph framework, providing bundled PHP binaries via static-php-py for zero-configuration execution, enabling Python tools to work with PHP ASTs while delegating all parsing and code generation to PHP-Parser.
+Python-based static analysis tools for PHP require Abstract Syntax Tree representations that integrate with graph-based analysis frameworks. Existing solutions either lack complete AST fidelity or require external PHP installations. This project bridges PHP-Parser's native capabilities with cpg2py's graph framework, enabling Python tools to work with PHP ASTs while delegating all parsing and code generation to PHP-Parser.
 
 **System Role**
 
@@ -13,16 +13,15 @@ php-parser-py serves as a thin wrapper that bridges PHP-Parser's JSON serializat
 **Data Flow**
 
 - **Inputs:** PHP Source Code
-- **Outputs:** AST, PHP Source Code (regenerated)
-- **Connections:** PHP Source → static-php-py → PHP-Parser → AST JSON → AST → AST JSON → PHP-Parser → static-php-py → PHP Source
+- **Outputs:** PHPASTGraph, PHP Source Code (regenerated)
+- **Connections:** PHP Source → PHP-Parser → AST JSON → PHPASTGraph → AST JSON → PHP-Parser → PHP Source
 
 **Scope Boundaries**
 
 - **Owned:**
-  - PHP-Parser invocation via static-php-py for parsing and code generation
+  - PHP-Parser invocation for parsing and code generation
   - AST JSON to cpg2py Storage mapping
-  - Node and AST classes extending cpg2py interfaces
-  - Bundled PHP binary management via static-php-py
+  - PHPASTNode and PHPASTGraph extending cpg2py interfaces
 
 - **Not Owned:**
   - Node type definitions (from PHP-Parser)
@@ -79,20 +78,20 @@ php-parser-py serves as a thin wrapper that bridges PHP-Parser's JSON serializat
   - **Scope:** Includes all node types and attributes defined by PHP-Parser. This project does not define or interpret the JSON schema.
   - **Relationships:** Produced by PHP-Parser during parsing, consumed by PHP-Parser during code generation, stored in PHPASTGraph as cpg2py Storage.
 
-- **Node**
+- **PHPASTNode**
   - **Definition:** A graph node extending cpg2py's AbcNodeQuerier that wraps a single AST JSON node. It provides dynamic property access to all JSON fields without hardcoded field definitions.
   - **Scope:** Includes all properties from the original JSON node. Excludes type-specific behavior or validation.
-  - **Relationships:** Contained within AST, linked to other nodes via edges, accessed via cpg2py traversal methods.
+  - **Relationships:** Contained within PHPASTGraph, linked to other nodes via edges, accessed via cpg2py traversal methods.
 
-- **AST**
+- **PHPASTGraph**
   - **Definition:** A graph structure extending cpg2py's AbcGraphQuerier that stores the complete AST. It uses cpg2py's Storage for node and edge management, representing parent-child relationships as typed edges.
   - **Scope:** Includes all AST nodes and their relationships. Provides cpg2py-compatible traversal methods.
-  - **Relationships:** Contains Node instances, constructed from AST JSON, reconstructs AST JSON for code generation.
+  - **Relationships:** Contains PHPASTNode instances, constructed from AST JSON, reconstructs AST JSON for code generation.
 
-- **Runner**
-  - **Definition:** The component that manages communication with PHP-Parser via static-php-py. It invokes PHP-Parser for parsing and code generation using inline PHP scripts, handling input/output serialization.
-  - **Scope:** Includes process lifecycle, data exchange, and inline PHP script generation. Excludes parsing or printing logic implementation.
-  - **Relationships:** Uses static-php-py for PHP binary execution, receives PHP Source Code and AST JSON, produces AST JSON and PHP Source Code.
+- **PHP Runner**
+  - **Definition:** The component that manages communication with PHP-Parser via static-php-py. It invokes PHP-Parser for parsing and code generation, handling input/output serialization.
+  - **Scope:** Includes process lifecycle and data exchange. Excludes parsing or printing logic implementation.
+  - **Relationships:** Uses static-php-py for PHP execution, receives PHP Source Code and AST JSON, produces AST JSON and PHP Source Code.
 
 - **Storage**
   - **Definition:** cpg2py's internal data structure for holding nodes, edges, and their properties. It provides the foundation for graph traversal and query operations.
@@ -107,9 +106,9 @@ php-parser-py serves as a thin wrapper that bridges PHP-Parser's JSON serializat
 
 - **With PHP-Parser:** All data exchange uses PHP-Parser's native JSON format. The JSON schema is defined by PHP-Parser and preserved without interpretation or modification by this project.
 
-- **With cpg2py:** Node extends AbcNodeQuerier, AST extends AbcGraphQuerier. All traversal methods are inherited from cpg2py. Storage holds AST data with PARENT_OF edges representing nesting.
+- **With cpg2py:** PHPASTNode extends AbcNodeQuerier, PHPASTGraph extends AbcGraphQuerier. All traversal methods are inherited from cpg2py. Storage holds AST data with PARENT_OF edges representing nesting.
 
-- **With static-php-py:** Runner uses static-php-py to obtain bundled PHP binaries (or custom binaries if specified). PHP scripts are generated inline and executed via `php -r`. Input and output pass through process stdin/stdout as text.
+- **With static-php-py:** PHP Runner uses static-php-py to invoke PHP-Parser. Input and output pass through process stdin/stdout as text.
 
 **Internal Processing Flow**
 
@@ -117,17 +116,17 @@ php-parser-py serves as a thin wrapper that bridges PHP-Parser's JSON serializat
 
 2. **PHP Invocation** - PHP Runner invokes PHP-Parser to parse the code and serialize the AST to JSON format.
 
-3. **JSON Capture** - Runner captures the AST JSON output.
+3. **JSON Capture** - PHP Runner captures the AST JSON output.
 
 4. **Storage Population** - The JSON is walked recursively, creating nodes and PARENT_OF edges in cpg2py Storage.
 
-5. **Graph Creation** - AST is instantiated with the populated Storage.
+5. **Graph Creation** - PHPASTGraph is instantiated with the populated Storage.
 
 6. **Traversal** - User traverses the graph using cpg2py's inherited methods.
 
 7. **JSON Reconstruction** - For code generation, Storage is walked to reconstruct the original JSON structure.
 
-8. **Code Generation** - Runner invokes PHP-Parser to decode JSON and generate PHP Source Code.
+8. **Code Generation** - PHP Runner invokes PHP-Parser to decode JSON and generate PHP Source Code.
 
 9. **Output Delivery** - Regenerated PHP Source Code is returned to the user.
 
@@ -145,9 +144,7 @@ php-parser-py serves as a thin wrapper that bridges PHP-Parser's JSON serializat
 
 - **Interaction:** A refactoring tool modifies property values in the graph, then regenerates code. The JSON reconstruction preserves all structural relationships. PHP-Parser's code generator produces valid PHP reflecting the modifications.
 
-- **Interaction:** A multi-language analyzer combines PHP ASTs with other language graphs in a cpg2py pipeline. AST is fully compatible with cpg2py's interface, enabling unified traversal and analysis across languages.
-
-- **Configuration:** A user needs a specific PHP version. They instantiate Parser with a custom PHP binary path or URL, and static-php-py downloads and caches the binary. All subsequent parsing uses the custom PHP version.
+- **Interaction:** A multi-language analyzer combines PHP ASTs with other language graphs in a cpg2py pipeline. PHPASTGraph is fully compatible with cpg2py's interface, enabling unified traversal and analysis across languages.
 
 ---
 

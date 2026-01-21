@@ -2,19 +2,19 @@
 
 ## Design Overview
 
-**Classes**: `Node`, `Edge`, `AST`, `Parser`, `PrettyPrinter`, `Runner`
+**Classes**: `PHPASTNode`, `PHPASTEdge`, `PHPASTGraph`, `Parser`, `PrettyPrinter`, `PHPRunner`
 
 **Relationships**: 
-- `Node` extends cpg2py's `AbcNodeQuerier`
-- `Edge` extends cpg2py's `AbcEdgeQuerier`
-- `AST` extends cpg2py's `AbcGraphQuerier`
-- `Parser` uses `Runner` to invoke PHP-Parser parse + JsonSerializer
-- `PrettyPrinter` uses `Runner` to invoke PHP-Parser JsonDecoder + PrettyPrinter
+- `PHPASTNode` extends cpg2py's `AbcNodeQuerier`
+- `PHPASTEdge` extends cpg2py's `AbcEdgeQuerier`
+- `PHPASTGraph` extends cpg2py's `AbcGraphQuerier`
+- `Parser` uses `PHPRunner` to invoke PHP-Parser parse + JsonSerializer
+- `PrettyPrinter` uses `PHPRunner` to invoke PHP-Parser JsonDecoder + PrettyPrinter
 - All classes use cpg2py's `Storage` for node/edge management
 
 **Inherited from cpg2py**: `AbcNodeQuerier`, `AbcEdgeQuerier`, `AbcGraphQuerier`, `Storage`
 
-**Exceptions**: `ParseError`, `RunnerError`
+**Exceptions**: `ParseError`, `PHPRunnerError`
 
 **Design Principle**: Maximize delegation to PHP-Parser. No hardcoded node types. All AST operations use PHP-Parser's native JSON format.
 
@@ -22,7 +22,7 @@
 
 ## Class Specifications
 
-### Node Class
+### PHPASTNode Class
 
 - **Responsibility**: Wraps a single AST node stored in cpg2py Storage, providing dynamic property access to PHP-Parser's JSON fields.
 
@@ -62,7 +62,7 @@ line = node.get_property("startLine", "lineno")  # Try multiple names
 
 ---
 
-### Edge Class
+### PHPASTEdge Class
 
 - **Responsibility**: Represents an edge between AST nodes, extending cpg2py's `AbcEdgeQuerier`.
 
@@ -83,100 +83,126 @@ line = node.get_property("startLine", "lineno")  # Try multiple names
 
 ---
 
-### AST Class
+### PHPASTGraph Class
 
 - **Responsibility**: Represents the complete AST as a graph, storing PHP-Parser's JSON structure in cpg2py Storage.
 
 - **Inherits**: `cpg2py.AbcGraphQuerier`
 
-- **[__init__(self, storage: Storage) -> None]**
-  - **Behavior**: Initializes graph with populated storage
-  - **Input**: cpg2py Storage containing AST nodes and edges
+- **[__init__(self, storage: Storage, root_node_id: str = "node_0") -> None]**
+  - **Behavior**: Initializes graph with populated storage and root node ID
+  - **Input**: cpg2py Storage containing AST nodes and edges, optional root node ID
+  - **Note**: For project structures, root_node_id is typically `"project"`
 
-- **[node(whose_id_is: str) -> Node | None]** (implements abstract)
+- **[node(whose_id_is: str) -> PHPASTNode | None]** (implements abstract)
   - **Behavior**: Returns node wrapper by ID
   - **Input**: Node ID string
-  - **Output**: Node instance or None
+  - **Output**: PHPASTNode instance or None
 
-- **[edge(fid: str, tid: str, eid: str) -> Edge | None]** (implements abstract)
+- **[edge(fid: str, tid: str, eid: str) -> PHPASTEdge | None]** (implements abstract)
   - **Behavior**: Returns edge wrapper by ID tuple
   - **Input**: From ID, To ID, Edge type
-  - **Output**: Edge instance or None
+  - **Output**: PHPASTEdge instance or None
+
+- **[@property root_node -> PHPASTNode | None]**
+  - **Behavior**: Returns the root node of the AST (project node for project structures)
+  - **Output**: Root Node instance or None
+
+- **[@property project_node -> PHPASTNode | None]**
+  - **Behavior**: Alias for root_node, returns project node
+  - **Output**: Project Node instance or None
+
+- **[files() -> list[PHPASTNode]]**
+  - **Behavior**: Returns all file nodes in the project
+  - **Output**: List of File Node instances, sorted by file path
+  - **Note**: Only works for ASTs with project structure (created via parse_file or parse_project)
+
+- **[get_file(node_id: str) -> PHPASTNode | None]**
+  - **Behavior**: Gets the file node containing the given node by traversing upward via PARENT_OF edges
+  - **Input**: Node ID string
+  - **Output**: File Node instance containing the node, or None if:
+    - Node ID doesn't exist
+    - Node is the project node (project doesn't belong to a file)
+    - Node is not under any file node
+  - **Note**: If the node itself is a File node, returns it
 
 - **[to_json() -> str]**
   - **Behavior**: Reconstructs PHP-Parser JSON from Storage for code generation
   - **Output**: JSON string compatible with PHP-Parser's JsonDecoder
-  - **Note**: Traverses PARENT_OF edges to rebuild nested structure
+  - **Note**: Traverses PARENT_OF edges to rebuild nested structure, excludes virtual project/file nodes for PrettyPrinter compatibility
 
 - **Inherited Traversal Methods** (from AbcGraphQuerier):
   - `nodes(predicate)` → iterate all nodes matching condition
   - `first_node(predicate)` → get first matching node
   - `edges(predicate)` → iterate all edges matching condition
-  - `succ(node, predicate)` → successor nodes
-  - `prev(node, predicate)` → predecessor nodes
-  - `children(node, predicate)` → child nodes via PARENT_OF
-  - `parent(node, predicate)` → parent nodes via PARENT_OF
+  - `succ(node, predicate)` → successor nodes (children via PARENT_OF edges)
+  - `prev(node, predicate)` → predecessor nodes (parents via PARENT_OF edges)
   - `descendants(node, predicate)` → all descendants via BFS
   - `ancestors(node, predicate)` → all ancestors via BFS
 
 - **Example Usage**:
 ```python
 # Query by node type (from PHP-Parser JSON, not hardcoded)
-for func in ast.nodes(lambda n: n.label == "Stmt_Function"):
+for func in graph.nodes(lambda n: n.label == "Stmt_Function"):
     print(func.get_property("name"))
 
 # Traverse children
-for child in ast.children(some_node):
+for child in graph.children(some_node):
     print(child.label)
 
 # Reconstruct JSON for printing
-json_str = ast.to_json()
+json_str = graph.to_json()
 ```
 
 ---
 
 ### Parser Class
 
-- **Responsibility**: Parses PHP source code by invoking PHP-Parser, returning AST.
+- **Responsibility**: Parses PHP source code by invoking PHP-Parser, returning AST or list of nodes.
 
 - **Properties**:
-  - `_runner: Runner` - PHP binary execution handler
-  - `_node_counter: int` - Counter for generating unique node IDs
-  - `_node_id_prefix: str` - Optional prefix for node IDs
+  - `_runner: PHPRunner` - PHP binary execution handler
 
-- **[__init__(self, php_binary_path: Optional[Path] = None, php_binary_url: Optional[str] = None) -> None]**
-  - **Behavior**: Initializes Parser with Runner and optional PHP binary configuration
-  - **Input**: 
-    - `php_binary_path`: Optional path to local PHP binary
-    - `php_binary_url`: Optional URL to download PHP binary from
-  - **Note**: If no PHP binary is specified, uses bundled PHP from static-php-py
-
-- **[parse(code: str, prefix: str = "") -> AST]**
-  - **Behavior**: Parses PHP code via PHP-Parser, populates cpg2py Storage from JSON
-  - **Input**: 
-    - `code`: PHP source code string
-    - `prefix`: Optional prefix for node IDs (useful for multi-file parsing)
-  - **Output**: AST instance
+- **[parse(code: str) -> AST]**
+  - **Behavior**: Parses PHP code via PHP-Parser, creates temporary file structure for backward compatibility
+  - **Input**: PHP source code string
+  - **Output**: AST instance with project -> file -> statements hierarchy
   - **Raises**: `ParseError` if PHP-Parser reports syntax error
-  - **PHP Script Used**:
-    ```php
-    <?php
-    require 'vendor/autoload.php';
-    use PhpParser\ParserFactory;
-    use PhpParser\JsonSerializer;
-    
-    $code = file_get_contents('php://stdin');
-    $parser = (new ParserFactory())->createForNewestSupportedVersion();
-    $stmts = $parser->parse($code);
-    $serializer = new JsonSerializer();
-    echo $serializer->serialize($stmts);
-    ```
+  - **Note**: For code-only parsing without project structure, use `parse_code()` instead
 
-- **[parse_file(path: str, node_id_prefix: str | None = None) -> AST]**
-  - **Behavior**: Reads file and parses content with optional node ID prefix
-  - **Input**: File path string, optional node ID prefix (defaults to hash of file path)
-  - **Output**: AST instance
+- **[parse_code(code: str) -> list[Node]]**
+  - **Behavior**: Parses PHP code string into raw statement nodes without project/file structure
+  - **Input**: PHP source code string
+  - **Output**: List of Node instances representing top-level statements
+  - **Raises**: `ParseError` if PHP-Parser reports syntax error
+  - **Node IDs**: Simple `node_1`, `node_2`, ... format (no prefix)
+
+- **[parse_file(path: str) -> AST]**
+  - **Behavior**: Parses a single PHP file, creates project and file nodes
+  - **Input**: File path string
+  - **Output**: AST instance with project -> file -> statements hierarchy
   - **Raises**: `ParseError`, `FileNotFoundError`
+  - **Structure**: 
+    - Project node (ID: `"project"`, fixed)
+      - `path` property: File's directory (project root)
+    - File node (ID: 8-character hex hash of file path)
+      - `path` property: Relative path from project root (filename)
+      - `filePath` property: Absolute file path
+    - Statement nodes (IDs: `{hex}_1`, `{hex}_2`, ...)
+
+- **[parse_project(paths: list[str], project_path: str | None = None) -> AST]**
+  - **Behavior**: Parses multiple PHP files into a single AST with project structure
+  - **Input**: List of file path strings, optional project root path
+  - **Output**: AST instance with project -> multiple files -> statements hierarchy
+  - **Raises**: `ParseError` if any file has syntax errors, `FileNotFoundError` if any file missing
+  - **Project Path**: If `project_path` not provided, computed as common parent directory of all files
+  - **Structure**: 
+    - Single project node (ID: `"project"`, fixed)
+      - `path` property: Project root directory
+    - Multiple file nodes (each with unique hex hash ID)
+      - `path` property: Relative path from project root
+      - `filePath` property: Absolute file path
+    - Statement nodes within each file (prefixed with file hash)
 
 - **[_json_to_storage(json_data: list | dict) -> Storage]** (internal)
   - **Behavior**: Converts PHP-Parser JSON to cpg2py Storage
@@ -192,23 +218,20 @@ json_str = ast.to_json()
 
 ### PrettyPrinter Class
 
-- **Responsibility**: Converts AST to PHP code by invoking PHP-Parser's PrettyPrinter.
+- **Responsibility**: Converts AST to PHP code by invoking PHP-Parser's PrettyPrinter for each file.
 
 - **Properties**:
-  - `_runner: Runner` - PHP binary execution handler
+  - `_runner: PHPRunner` - PHP binary execution handler
 
-- **[__init__(self, php_binary_path: Optional[Path] = None, php_binary_url: Optional[str] = None) -> None]**
-  - **Behavior**: Initializes PrettyPrinter with Runner and optional PHP binary configuration
-  - **Input**:
-    - `php_binary_path`: Optional path to local PHP binary
-    - `php_binary_url`: Optional URL to download PHP binary from
-  - **Note**: If no PHP binary is specified, uses bundled PHP from static-php-py
-
-- **[print(ast: AST) -> str]**
-  - **Behavior**: Reconstructs JSON from AST, invokes PHP-Parser to generate code
-  - **Input**: AST instance
-  - **Output**: PHP source code string
-  - **Raises**: `RunnerError` if PHP-Parser fails
+- **[print(ast: AST) -> dict[str, str]]**
+  - **Behavior**: Reconstructs JSON from AST for each file, invokes PHP-Parser to generate code
+  - **Input**: AST instance (may contain multiple files)
+  - **Output**: Dictionary mapping file paths to PHP source code strings
+    - Keys: File paths (from file node's `filePath` property) or file hash if path unavailable
+    - Values: Generated PHP source code for that file
+    - If AST has no file structure, returns single entry with key `""` (empty string)
+  - **Raises**: `PHPRunnerError` if PHP-Parser fails
+  - **Note**: Each file is processed separately, allowing independent code generation
   - **PHP Script Used**:
     ```php
     <?php
@@ -225,27 +248,19 @@ json_str = ast.to_json()
 
 ---
 
-### Runner Class
+### PHPRunner Class
 
 - **Responsibility**: Manages PHP-Parser invocation via static-php-py.
 
 - **Properties**:
-  - `_php_binary: Path` - Path to PHP binary (from static-php-py or custom)
-  - `_vendor_dir: Path` - Path to directory containing extracted PHP-Parser PHAR
-
-- **[__init__(self, php_binary_path: Optional[Path] = None, php_binary_url: Optional[str] = None) -> None]**
-  - **Behavior**: Initializes Runner with PHP binary from static-php-py or custom source
-  - **Input**:
-    - `php_binary_path`: Optional path to local PHP binary
-    - `php_binary_url`: Optional URL to download PHP binary from
-  - **Priority**: custom path > custom URL > built-in binary from static-php-py
-  - **Raises**: `RunnerError` if PHP binary cannot be obtained
+  - `_php_binary: Path` - Path to static PHP binary (from static-php-py)
+  - `_phar_path: Path` - Path to PHP-Parser PHAR file
 
 - **[execute(script: str, stdin: str) -> str]**
   - **Behavior**: Executes PHP script with stdin input, returns stdout
   - **Input**: PHP script content, stdin data
   - **Output**: stdout content
-  - **Raises**: `RunnerError` if non-zero exit code
+  - **Raises**: `PHPRunnerError` if non-zero exit code
 
 - **[parse(code: str) -> dict]**
   - **Behavior**: Invokes PHP-Parser parse + JsonSerializer
@@ -253,49 +268,28 @@ json_str = ast.to_json()
   - **Output**: Parsed JSON as dict
   - **Raises**: `ParseError` if syntax error (extracted from PHP-Parser output)
 
-- **[_build_parse_script(self) -> str]** (internal)
-  - **Behavior**: Generates inline PHP script for parsing
-  - **Output**: PHP script string for execution via `php -r`
-  - **Note**: Script uses PHP-Parser's ParserFactory and JsonSerializer
-
-- **[_build_print_script(self) -> str]** (internal)
-  - **Behavior**: Generates inline PHP script for code generation
-  - **Output**: PHP script string for execution via `php -r`
-  - **Note**: Script uses PHP-Parser's JsonDecoder and PrettyPrinter
-
----
-
-## Resource Management
-
-### Runtime Extraction
-
-PHP-Parser is distributed as a compressed zip file (`resources/php-parser-4.19.4.zip`) and automatically extracted on first import:
-
-1. **Package Installation**: When users run `pip install php-parser-py`, the wheel includes the compressed PHP-Parser zip file
-2. **First Import**: On `import php_parser_py`, the package checks if PHP-Parser has been extracted
-3. **Extraction**: If not found, extracts `php-parser.phar` to `php_parser_py/vendor/` directory
-4. **Caching**: Creates `.extracted` marker file with zip hash to prevent re-extraction
-5. **Subsequent Imports**: Fast path checks marker file and skips extraction
-
-### _resources Module
-
-- **[ensure_php_parser_extracted() -> Path]**
-  - **Behavior**: Ensures PHP-Parser is extracted and ready to use
-  - **Thread-safe**: Uses threading lock to prevent concurrent extraction
-  - **Hash verification**: Compares zip file hash with marker to detect updates
-  - **Output**: Path to vendor directory containing PHP-Parser
-  - **Raises**: `FileNotFoundError` if zip not found, `RuntimeError` if extraction fails
-
-- **[get_php_parser_path() -> Path | None]**
-  - **Behavior**: Returns path to extracted PHP-Parser directory
-  - **Output**: Path to PHP-Parser or None if not extracted
+- **[print(ast_json: str) -> str]**
+  - **Behavior**: Invokes PHP-Parser JsonDecoder + PrettyPrinter
+  - **Input**: AST JSON string
+  - **Output**: PHP source code
+  - **Raises**: `PHPRunnerError` if fails
 
 ---
 
 ## Module-Level Functions
 
+**[parse_code(code: str) -> list[Node]]**
+- **Responsibility**: Parse PHP code string into raw statement nodes without project/file structure
+- **Example**:
+```python
+from php_parser_py import parse_code
+nodes = parse_code("<?php function foo() {}")
+# Returns list of Node instances
+```
+
 **[parse(code: str) -> AST]**
-- **Responsibility**: Convenience function to parse PHP code
+- **Responsibility**: Convenience function to parse PHP code (backward compatibility)
+- **Note**: Creates temporary file structure, use `parse_code()` for code-only parsing
 - **Example**:
 ```python
 from php_parser_py import parse
@@ -303,9 +297,49 @@ ast = parse("<?php echo 'hello';")
 ```
 
 **[parse_file(path: str) -> AST]**
-- **Responsibility**: Convenience function to parse PHP file
+- **Responsibility**: Convenience function to parse a single PHP file with project structure
+- **Example**:
+```python
+from php_parser_py import parse_file
+ast = parse_file("example.php")
+files = ast.files()
+```
+
+**[parse_project(paths: list[str]) -> AST]**
+- **Responsibility**: Convenience function to parse multiple PHP files into a single AST
+- **Example**:
+```python
+from php_parser_py import parse_project
+ast = parse_project(["file1.php", "file2.php"])
+files = ast.files()  # Returns all file nodes
+```
 
 ---
+
+## AST Structure
+
+The library supports three parsing modes with different AST structures:
+
+### 1. Code Parsing (`parse_code`)
+- **Structure**: Flat list of statement nodes
+- **Node IDs**: `node_1`, `node_2`, `node_3`, ...
+- **Use Case**: Code analysis without file/project context
+
+### 2. File Parsing (`parse_file`)
+- **Structure**: Project → File → Statements
+- **Node IDs**:
+  - Project: `"project"` (fixed)
+  - File: 8-character hex hash (e.g., `"a1b2c3d4"`)
+  - Statements: `{hex}_1`, `{hex}_2`, `{hex}_3`, ...
+- **Use Case**: Single file analysis with file context
+
+### 3. Project Parsing (`parse_project`)
+- **Structure**: Project → Multiple Files → Statements
+- **Node IDs**:
+  - Project: `"project"` (fixed)
+  - Files: Unique 8-character hex hash per file
+  - Statements: `{hex}_1`, `{hex}_2`, ... (prefixed with file hash)
+- **Use Case**: Multi-file project analysis
 
 ## JSON-to-Storage Mapping
 
@@ -325,18 +359,28 @@ PHP-Parser's JSON structure is mapped to cpg2py Storage mechanically:
 }]
 ```
 
-**Storage Mapping**:
+**Storage Mapping** (for `parse_code`):
 
 | Node ID | Properties |
 |---------|------------|
-| `node_0` | `{nodeType: "Stmt_Function", startLine: 1, endLine: 3, ...}` |
-| `node_1` | `{nodeType: "Identifier", name: "foo"}` |
-| `node_2` | `{nodeType: "Stmt_Return", startLine: 2}` |
+| `node_1` | `{nodeType: "Stmt_Function", startLine: 1, endLine: 3, ...}` |
+| `node_2` | `{nodeType: "Identifier", name: "foo"}` |
+| `node_3` | `{nodeType: "Stmt_Return", startLine: 2}` |
+
+**Storage Mapping** (for `parse_file`):
+
+| Node ID | Properties |
+|---------|------------|
+| `project` | `{nodeType: "Project", label: "Project"}` |
+| `a1b2c3d4` | `{nodeType: "File", label: "File", filePath: "/path/to/file.php"}` |
+| `a1b2c3d4_1` | `{nodeType: "Stmt_Function", startLine: 1, ...}` |
+| `a1b2c3d4_2` | `{nodeType: "Identifier", name: "foo"}` |
 
 | Edge (from, to, type) | Properties |
 |-----------------------|------------|
-| `(node_0, node_1, PARENT_OF)` | `{field: "name"}` |
-| `(node_0, node_2, PARENT_OF)` | `{field: "stmts", index: 0}` |
+| `(project, a1b2c3d4, PARENT_OF)` | `{field: "files"}` |
+| `(a1b2c3d4, a1b2c3d4_1, PARENT_OF)` | `{field: "stmts", index: 0}` |
+| `(a1b2c3d4_1, a1b2c3d4_2, PARENT_OF)` | `{field: "name"}` |
 
 **Mapping Rules**:
 1. Each object with `nodeType` → new node with unique ID
@@ -346,6 +390,7 @@ PHP-Parser's JSON structure is mapped to cpg2py Storage mechanically:
 5. Object fields (nested node) → PARENT_OF edge + field name in edge properties
 6. Array fields → PARENT_OF edges with `index` property for ordering
 7. Null fields → not stored (or stored as explicit null)
+8. Project/File nodes are virtual nodes not present in PHP-Parser JSON
 
 ---
 
@@ -374,7 +419,7 @@ For code generation, Storage is converted back to PHP-Parser's exact JSON format
 - Properties: `message: str`, `line: int | None`
 - Source: Extracted from PHP-Parser's error output
 
-**RunnerError**: Raised when PHP process execution fails.
+**PHPRunnerError**: Raised when PHP process execution fails.
 - Properties: `message: str`, `stderr: str`, `exit_code: int`
 
 ---
@@ -383,42 +428,32 @@ For code generation, Storage is converted back to PHP-Parser's exact JSON format
 
 ```
 php_parser_py/
-├── src/
-│   └── php_parser_py/
-│       ├── __init__.py          # Public API: parse, parse_file
-│       ├── _resources.py        # Resource extraction and management
-│       ├── _ast.py              # AST (extends AbcGraphQuerier)
-│       ├── _node.py             # Node (extends AbcNodeQuerier)
-│       ├── _edge.py             # Edge (extends AbcEdgeQuerier)
-│       ├── _parser.py           # Parser class with JSON-to-Storage mapping
-│       ├── _printer.py          # PrettyPrinter class with Storage-to-JSON
-│       ├── _runner.py           # Runner class for PHP-Parser invocation
-│       ├── exceptions.py        # ParseError, RunnerError
-│       ├── resources/
-│       │   └── php-parser-4.19.4.zip  # Bundled PHP-Parser (extracted at runtime)
-│       └── vendor/              # Created at runtime (gitignored)
-│           ├── .extracted       # Marker file with zip hash
-│           ├── php-parser.phar  # Extracted PHP-Parser PHAR
-│           └── LICENSE.txt      # PHP-Parser license
-├── docs/
-│   ├── design.md
-│   └── idea.md
-└── pyproject.toml
+├── __init__.py              # Public API: parse, parse_file
+├── graph.py                 # PHPASTGraph (extends AbcGraphQuerier)
+├── node.py                  # PHPASTNode (extends AbcNodeQuerier)
+├── edge.py                  # PHPASTEdge (extends AbcEdgeQuerier)
+├── parser.py                # Parser class with JSON-to-Storage mapping
+├── printer.py               # PrettyPrinter class with Storage-to-JSON
+├── runner.py                # PHPRunner class for PHP-Parser invocation
+├── exceptions.py            # ParseError, PHPRunnerError
+└── scripts/
+    ├── parse.php            # PHP script for parsing
+    └── print.php            # PHP script for code generation
 ```
 
 ---
 
-## Inline PHP Scripts
+## PHP Scripts
 
-PHP scripts are generated inline by Runner methods and executed via `php -r`:
-
-### Parse Script (generated by _build_parse_script)
+### parse.php
 
 ```php
-error_reporting(E_ALL & ~E_DEPRECATED);
-require_once 'phar://{phar_path}/vendor/autoload.php';
+<?php
+// Bundled with PHP-Parser PHAR
+require_once __DIR__ . '/php-parser.phar';
 
 use PhpParser\ParserFactory;
+use PhpParser\JsonSerializer;
 use PhpParser\ErrorHandler\Collecting;
 
 $code = file_get_contents('php://stdin');
@@ -435,32 +470,32 @@ try {
         echo json_encode(['errors' => $errors]);
         exit(1);
     }
-    // PHP-Parser nodes implement JsonSerializable
-    echo json_encode($stmts);
+    $serializer = new JsonSerializer();
+    echo $serializer->serialize($stmts);
 } catch (Exception $e) {
     echo json_encode(['error' => $e->getMessage()]);
     exit(1);
 }
 ```
 
-### Print Script (generated by _build_print_script)
+### print.php
 
 ```php
-error_reporting(E_ALL & ~E_DEPRECATED);
-require_once 'phar://{phar_path}/vendor/autoload.php';
+<?php
+require_once __DIR__ . '/php-parser.phar';
 
 use PhpParser\JsonDecoder;
-use PhpParser\PrettyPrinter\Standard;
+use PhpParser\PrettyPrinter;
 
 $json = file_get_contents('php://stdin');
 
 try {
     $decoder = new JsonDecoder();
     $stmts = $decoder->decode($json);
-    $printer = new Standard();
+    $printer = new PrettyPrinter\Standard();
     echo $printer->prettyPrintFile($stmts);
 } catch (Exception $e) {
-    echo json_encode(['error' => $e->getMessage()]);
+    fwrite(STDERR, $e->getMessage());
     exit(1);
 }
 ```
@@ -484,9 +519,3 @@ try {
 - Provides graph traversal infrastructure
 - Enables integration with multi-language analysis pipelines
 - Familiar API for cpg2py users
-
-**Why static-php-py?**
-- Zero-configuration installation - no system PHP required
-- Cross-platform support with pre-built binaries
-- Flexible - supports custom PHP binaries when needed
-- Self-contained distribution

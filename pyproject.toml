@@ -1,6 +1,6 @@
 [project]
 name = "php-parser-py"
-version = "0.1.1"
+version = "1.0.0"
 description = "Python wrapper for PHP-Parser using cpg2py"
 readme = "README.md"
 authors = [
