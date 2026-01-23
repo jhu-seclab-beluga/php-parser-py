@@ -9,20 +9,6 @@ from php_parser_py._edge import Edge
 class TestEdge:
     """Test suite for Edge class."""
 
-    @pytest.fixture
-    def storage_with_edge(self):
-        """Create a storage with test nodes and an edge."""
-        from cpg2py import Storage
-
-        storage = Storage()
-        storage.add_node("node1")
-        storage.set_node_props("node1", {"nodeType": "Stmt_Echo"})
-        storage.add_node("node2")
-        storage.set_node_props("node2", {"nodeType": "Stmt_Return"})
-        storage.add_edge(("node1", "node2", "PARENT_OF"))
-        storage.set_edge_props(("node1", "node2", "PARENT_OF"), {"field": "stmts", "index": 0})
-        return storage
-
     def test_edge_initialization(self, storage_with_edge):
         """Test Edge initialization."""
         edge = Edge(storage_with_edge, "node1", "node2", "PARENT_OF")

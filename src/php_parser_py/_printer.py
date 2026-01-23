@@ -26,7 +26,7 @@ class PrettyPrinter:
         php_binary_url: Optional[str] = None,
     ) -> None:
         """Initialize PrettyPrinter with Runner.
-        
+
         Args:
             php_binary_path: Optional path to local PHP binary.
             php_binary_url: Optional URL to download PHP binary from.
@@ -104,6 +104,4 @@ class PrettyPrinter:
                 json_str = ast.to_json(file_hash=file_hash)
                 return self._runner.print(json_str)
 
-        raise KeyError(
-            f"File with relative path '{relative_path}' not found in AST."
-        )
+        raise KeyError(f"File with relative path '{relative_path}' not found in AST.")

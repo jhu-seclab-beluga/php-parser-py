@@ -119,7 +119,9 @@ class AST(AbcGraphQuerier[Node, Edge]):
         # Sort by file path for consistent ordering
         return sorted(file_nodes, key=lambda n: n.get_property("filePath", ""))
 
-    def get_file(self, node_id: str) -> Optional[Node]:
+    def get_file(
+        self, node_id: str
+    ) -> Optional[Node]:  # pylint: disable=too-many-return-statements
         """Get the file node that contains the given node.
 
         Traverses upward from the given node via PARENT_OF edges until
@@ -215,7 +217,7 @@ class AST(AbcGraphQuerier[Node, Edge]):
                 nodes_with_parents = set()
 
                 for edge_id in self._storage.get_edges():
-                    from_id, to_id, edge_type = edge_id
+                    _, to_id, edge_type = edge_id
                     if edge_type == "PARENT_OF":
                         nodes_with_parents.add(to_id)
 
@@ -253,10 +255,20 @@ class AST(AbcGraphQuerier[Node, Edge]):
 
         return sorted(statement_nodes, key=get_index)
 
-    def _reconstruct_node(self, nid: str) -> dict[str, Any]:
-        """Recursively reconstruct JSON object for a node."""
+    def _reconstruct_node(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+        self, nid: str
+    ) -> dict[str, Any]:
+        """Recursively reconstruct JSON object for a node.
+
+        Args:
+            nid: Node ID to reconstruct.
+
+        Returns:
+            Dictionary representing the node in PHP-Parser JSON format.
+        """
         props = self._storage.get_node_props(nid)
         if props is None:
+            logger.warning("Node %s not found in storage, returning empty dict", nid)
             return {}
 
         result: dict[str, Any] = {}
@@ -348,10 +360,12 @@ class AST(AbcGraphQuerier[Node, Edge]):
 
         # Add default values for common optional fields that PHP-Parser expects
         if node_type and ("attrGroups" not in result):
-            if (node_type.startswith("Stmt_") or 
-                node_type == "Param" or
-                node_type.startswith("Expr_Closure") or
-                node_type.startswith("Expr_ArrowFunction")):
+            if (
+                node_type.startswith("Stmt_")
+                or node_type == "Param"
+                or node_type.startswith("Expr_Closure")
+                or node_type.startswith("Expr_ArrowFunction")
+            ):
                 result["attrGroups"] = []
-        
+
         return result

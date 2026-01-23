@@ -9,28 +9,6 @@ from php_parser_py._node import Node
 class TestNode:
     """Test suite for Node class."""
 
-    @pytest.fixture
-    def storage_with_node(self):
-        """Create a storage with a test node."""
-        storage = Storage()
-        storage.add_node("test_node_1")
-        storage.set_node_props(
-            "test_node_1",
-            {
-                "nodeType": "Stmt_Function",
-                "name": "testFunction",
-                "byRef": False,
-                "startLine": 10,
-                "endLine": 20,
-                "startFilePos": 100,
-                "endFilePos": 200,
-                "startTokenPos": 5,
-                "endTokenPos": 15,
-                "comments": ["// test comment"],
-            },
-        )
-        return storage
-
     def test_node_initialization(self, storage_with_node):
         """Test Node initialization."""
         node = Node(storage_with_node, "test_node_1")

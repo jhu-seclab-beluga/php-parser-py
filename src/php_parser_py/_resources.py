@@ -12,7 +12,7 @@ from typing import Optional
 
 # Global lock for thread-safe extraction
 _extraction_lock = threading.Lock()
-_extraction_done = False
+_extraction_done = False  # pylint: disable=invalid-name
 
 
 def get_vendor_path() -> Path:

@@ -1,8 +1,16 @@
 """Unit tests for PrettyPrinter class."""
 
+import sys
+from pathlib import Path
+
 import pytest
 
-from php_parser_py import Parser, PrettyPrinter
+# Add tests directory to path to import conftest
+sys.path.insert(0, str(Path(__file__).parent))
+
+from conftest import parse_code_to_ast  # noqa: E402
+
+from php_parser_py import PrettyPrinter
 
 
 class TestPrettyPrinter:
@@ -15,12 +23,11 @@ class TestPrettyPrinter:
 
     def test_print_simple_code(self, simple_php_code):
         """Test printing simple PHP code."""
-        parser = Parser()
         printer = PrettyPrinter()
-        
-        ast = parser.parse(simple_php_code)
+
+        ast = parse_code_to_ast(simple_php_code)
         generated = printer.print(ast)
-        
+
         assert isinstance(generated, dict)
         assert len(generated) > 0
         # Get first (and likely only) file's code
@@ -30,12 +37,11 @@ class TestPrettyPrinter:
 
     def test_print_function(self, function_php_code):
         """Test printing PHP function."""
-        parser = Parser()
         printer = PrettyPrinter()
-        
-        ast = parser.parse(function_php_code)
+
+        ast = parse_code_to_ast(function_php_code)
         generated = printer.print(ast)
-        
+
         assert isinstance(generated, dict)
         code = list(generated.values())[0]
         assert "function" in code
@@ -44,12 +50,11 @@ class TestPrettyPrinter:
 
     def test_print_class(self, class_php_code):
         """Test printing PHP class."""
-        parser = Parser()
         printer = PrettyPrinter()
-        
-        ast = parser.parse(class_php_code)
+
+        ast = parse_code_to_ast(class_php_code)
         generated = printer.print(ast)
-        
+
         assert isinstance(generated, dict)
         code = list(generated.values())[0]
         assert "class" in code
@@ -58,19 +63,18 @@ class TestPrettyPrinter:
 
     def test_roundtrip_simple(self, simple_php_code):
         """Test round-trip: parse → print → parse."""
-        parser = Parser()
         printer = PrettyPrinter()
-        
+
         # First parse
-        ast1 = parser.parse(simple_php_code)
+        ast1 = parse_code_to_ast(simple_php_code)
         generated = printer.print(ast1)
-        
+
         # Get code from dict
         code = list(generated.values())[0]
-        
+
         # Second parse
-        ast2 = parser.parse(code)
-        
+        ast2 = parse_code_to_ast(code)
+
         # Should have same number of nodes
         nodes1 = list(ast1.nodes())
         nodes2 = list(ast2.nodes())
@@ -78,14 +82,13 @@ class TestPrettyPrinter:
 
     def test_roundtrip_function(self, function_php_code):
         """Test round-trip with function."""
-        parser = Parser()
         printer = PrettyPrinter()
-        
-        ast1 = parser.parse(function_php_code)
+
+        ast1 = parse_code_to_ast(function_php_code)
         generated = printer.print(ast1)
         code = list(generated.values())[0]
-        ast2 = parser.parse(code)
-        
+        ast2 = parse_code_to_ast(code)
+
         # Should have same function
         funcs1 = list(ast1.nodes(lambda n: n.node_type == "Stmt_Function"))
         funcs2 = list(ast2.nodes(lambda n: n.node_type == "Stmt_Function"))
@@ -93,14 +96,13 @@ class TestPrettyPrinter:
 
     def test_roundtrip_class(self, class_php_code):
         """Test round-trip with class."""
-        parser = Parser()
         printer = PrettyPrinter()
-        
-        ast1 = parser.parse(class_php_code)
+
+        ast1 = parse_code_to_ast(class_php_code)
         generated = printer.print(ast1)
         code = list(generated.values())[0]
-        ast2 = parser.parse(code)
-        
+        ast2 = parse_code_to_ast(code)
+
         # Should have same class
         classes1 = list(ast1.nodes(lambda n: n.node_type == "Stmt_Class"))
         classes2 = list(ast2.nodes(lambda n: n.node_type == "Stmt_Class"))

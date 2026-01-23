@@ -3,14 +3,14 @@
 import hashlib
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from cpg2py import Storage
 
 from php_parser_py._ast import AST
+from php_parser_py._exceptions import ParseError, RunnerError
 from php_parser_py._node import Node
 from php_parser_py._runner import Runner
-from php_parser_py.exceptions import ParseError, RunnerError
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class Parser:
     Provides three parsing methods:
     - parse_code: Parse code string, returns list of top-level statement nodes
     - parse_file: Parse single file, returns AST with project and file nodes
-    - parse_project: Parse multiple files, returns AST with project and multiple file nodes
+    - parse_project: Parse project directory, returns AST with project and all PHP files
 
     Attributes:
         _runner: Runner instance for PHP-Parser invocation.
@@ -33,7 +33,7 @@ class Parser:
         php_binary_url: Optional[str] = None,
     ) -> None:
         """Initialize Parser with Runner.
-        
+
         Args:
             php_binary_path: Optional path to local PHP binary.
             php_binary_url: Optional URL to download PHP binary from.
@@ -42,35 +42,6 @@ class Parser:
             php_binary_path=php_binary_path,
             php_binary_url=php_binary_url,
         )
-
-    def parse(self, code: str) -> AST:
-        """Parse PHP code string into an AST (backward compatibility).
-
-        Creates a temporary project/file structure. For code-only parsing
-        without project structure, use parse_code() instead.
-
-        Args:
-            code: PHP source code string.
-
-        Returns:
-            AST instance with project -> file -> statements hierarchy.
-
-        Raises:
-            ParseError: If code has syntax errors.
-            RunnerError: If PHP execution fails.
-        """
-        import tempfile
-        from pathlib import Path
-        
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.php', delete=False) as f:
-            f.write(code)
-            temp_path = f.name
-        
-        try:
-            return self.parse_file(temp_path)
-        finally:
-            Path(temp_path).unlink()
 
     def parse_code(self, code: str) -> list[Node]:
         """Parse PHP code string into a list of top-level statement nodes.
@@ -94,7 +65,7 @@ class Parser:
             if "Syntax error" in str(e):
                 raise ParseError("Syntax error in PHP code", line=1) from e
             raise
-        
+
         # Normalize to list
         if not isinstance(json_data, list):
             json_data = [json_data]
@@ -105,7 +76,9 @@ class Parser:
         node_counter = [1]  # Use list to allow mutation in recursive calls
 
         for item in json_data:
-            node_id = self._process_node(storage, item, None, None, None, node_counter, "")
+            node_id = self._process_node(
+                storage, item, None, None, None, node_counter, ""
+            )
             if node_id:
                 node_ids.append(node_id)
 
@@ -140,7 +113,7 @@ class Parser:
         file_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
 
         code = file_path.read_text(encoding="utf-8")
-        
+
         try:
             json_data = self._runner.parse(code)
         except RunnerError as e:
@@ -153,63 +126,69 @@ class Parser:
             json_data = [json_data]
 
         storage = self._create_project_structure(
-            [(file_path, json_data)], 
+            [(file_path, json_data)],
             [(file_path, file_hash)],
-            project_path=project_path
+            project_path=project_path,
         )
         return AST(storage, root_node_id="project")
 
-    def parse_project(self, paths: list[str], project_path: str | None = None) -> AST:
-        """Parse multiple PHP files into an AST with project and file nodes.
+    def parse_project(
+        self,
+        project_path: str,
+        file_filter: Callable[[Path], bool] = lambda p: p.suffix == ".php",
+    ) -> AST:
+        """Parse all PHP files in a project directory into an AST.
 
-        Creates a project node (ID: "project") and multiple file nodes.
+        Recursively traverses the project directory to find all PHP files,
+        then parses them into a single AST with project and file nodes.
         Each file node has ID based on its path hash.
-        Project path is the common parent directory of all files, or the provided project_path.
 
         Args:
-            paths: List of file path strings.
-            project_path: Optional project root path. If not provided, computed as common parent.
+            project_path: Project root directory path.
+            file_filter: Function to filter files. Takes a Path and returns
+                True if the file should be parsed. Defaults to checking for `.php` suffix.
 
         Returns:
             AST instance with project -> files -> statements hierarchy.
 
         Raises:
             ParseError: If any file has syntax errors.
-            FileNotFoundError: If any file does not exist.
+            FileNotFoundError: If project directory does not exist.
+            ValueError: If project_path is not a directory.
         """
+        project_path_obj = Path(project_path).resolve()
+
+        if not project_path_obj.exists():
+            raise FileNotFoundError(f"Project directory not found: {project_path}")
+
+        if not project_path_obj.is_dir():
+            raise ValueError(f"Project path is not a directory: {project_path}")
+
+        # Find all files recursively and filter
+        all_files = project_path_obj.rglob("*")
+        php_files = [f for f in all_files if f.is_file() and file_filter(f)]
+
+        if not php_files:
+            logger.warning(f"No PHP files found in project directory: {project_path}")
+            # Create empty project structure
+            storage = Storage()
+            project_id = "project"
+            storage.add_node(project_id)
+            storage.set_node_props(
+                project_id,
+                {
+                    "nodeType": "Project",
+                    "label": "Project",
+                    "path": str(project_path_obj),
+                },
+            )
+            return AST(storage, root_node_id="project")
+
+        # Prepare file information
         file_infos = []
-        resolved_paths = []
-        for path in paths:
-            file_path = Path(path).resolve()
-            if not file_path.exists():
-                raise FileNotFoundError(f"File not found: {path}")
+        for file_path in php_files:
             file_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
             file_infos.append((file_path, file_hash))
-            resolved_paths.append(file_path)
-
-        # Determine project path
-        if project_path:
-            project_path = Path(project_path).resolve()
-        else:
-            # Compute common parent directory
-            if len(resolved_paths) == 1:
-                project_path = resolved_paths[0].parent
-            else:
-                # Find common parent
-                common_parts = None
-                for file_path in resolved_paths:
-                    parts = file_path.parts
-                    if common_parts is None:
-                        common_parts = parts
-                    else:
-                        # Find common prefix
-                        min_len = min(len(common_parts), len(parts))
-                        common_parts = [p for i, p in enumerate(common_parts[:min_len]) if parts[i] == p]
-                if common_parts:
-                    project_path = Path(*common_parts)
-                else:
-                    # Fallback to first file's parent
-                    project_path = resolved_paths[0].parent
 
         # Parse all files
         all_json_data = []
@@ -225,14 +204,16 @@ class Parser:
                     raise ParseError(f"Syntax error in {file_path}", line=1) from e
                 raise
 
-        storage = self._create_project_structure(all_json_data, file_infos, project_path=project_path)
+        storage = self._create_project_structure(
+            all_json_data, file_infos, project_path=project_path_obj
+        )
         return AST(storage, root_node_id="project")
 
     def _create_project_structure(
         self,
         files_data: list[tuple[Path, Any]],
         file_infos: list[tuple[Path, str]],
-        project_path: Path
+        project_path: Path,
     ) -> Storage:
         """Create AST structure with project -> files -> statements hierarchy.
 
@@ -249,11 +230,10 @@ class Parser:
         # Create project node (fixed ID: "project")
         project_id = "project"
         storage.add_node(project_id)
-        storage.set_node_props(project_id, {
-            "nodeType": "Project",
-            "label": "Project",
-            "path": str(project_path)
-        })
+        storage.set_node_props(
+            project_id,
+            {"nodeType": "Project", "label": "Project", "path": str(project_path)},
+        )
 
         # Create file nodes and process their statements
         for (file_path, file_hash), (_, json_data) in zip(file_infos, files_data):
@@ -267,12 +247,15 @@ class Parser:
             # Create file node (ID: hex hash)
             file_id = file_hash
             storage.add_node(file_id)
-            storage.set_node_props(file_id, {
-                "nodeType": "File",
-                "label": "File",
-                "filePath": str(file_path),  # Absolute path
-                "path": str(relative_path)   # Relative path from project root
-            })
+            storage.set_node_props(
+                file_id,
+                {
+                    "nodeType": "File",
+                    "label": "File",
+                    "filePath": str(file_path),  # Absolute path
+                    "path": str(relative_path),  # Relative path from project root
+                },
+            )
 
             # Link file to project
             edge_id = (project_id, file_id, "PARENT_OF")
@@ -291,7 +274,7 @@ class Parser:
 
         return storage
 
-    def _process_node(
+    def _process_node(  # pylint: disable=too-many-arguments,too-many-locals,too-many-branches
         self,
         storage: Storage,
         node_data: Any,
@@ -299,7 +282,7 @@ class Parser:
         field_name: str | None,
         index: int | None,
         node_counter: list[int],
-        prefix: str
+        prefix: str,
     ) -> str | None:
         """Process a single node and its children recursively.
 
@@ -383,7 +366,13 @@ class Parser:
             else:
                 # Single child object
                 self._process_node(
-                    storage, field_value, node_id, field_name, None, node_counter, prefix
+                    storage,
+                    field_value,
+                    node_id,
+                    field_name,
+                    None,
+                    node_counter,
+                    prefix,
                 )
 
         return node_id

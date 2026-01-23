@@ -190,15 +190,20 @@ json_str = graph.to_json()
       - `filePath` property: Absolute file path
     - Statement nodes (IDs: `{hex}_1`, `{hex}_2`, ...)
 
-- **[parse_project(paths: list[str], project_path: str | None = None) -> AST]**
-  - **Behavior**: Parses multiple PHP files into a single AST with project structure
-  - **Input**: List of file path strings, optional project root path
+- **[parse_project(project_path: str, file_filter: Callable[[Path], bool] = lambda p: p.suffix == '.php') -> AST]**
+  - **Behavior**: Recursively traverses project directory to find all PHP files, then parses them into a single AST with project structure
+  - **Input**: 
+    - `project_path`: Project root directory path string
+    - `file_filter`: Function to filter files. Takes a `Path` and returns `True` if the file should be parsed. Defaults to `lambda p: p.suffix == '.php'`
   - **Output**: AST instance with project -> multiple files -> statements hierarchy
-  - **Raises**: `ParseError` if any file has syntax errors, `FileNotFoundError` if any file missing
-  - **Project Path**: If `project_path` not provided, computed as common parent directory of all files
+  - **Raises**: `ParseError` if any file has syntax errors, `FileNotFoundError` if project directory does not exist, `ValueError` if project_path is not a directory
+  - **File Discovery**: 
+    - Recursively finds all files using `Path.rglob("*")`
+    - Filters files using `file_filter` function (default: `lambda p: p.suffix == '.php'`)
+    - Only processes files that pass the filter and are regular files
   - **Structure**: 
     - Single project node (ID: `"project"`, fixed)
-      - `path` property: Project root directory
+      - `path` property: Project root directory (absolute path)
     - Multiple file nodes (each with unique hex hash ID)
       - `path` property: Relative path from project root
       - `filePath` property: Absolute file path
@@ -305,13 +310,22 @@ ast = parse_file("example.php")
 files = ast.files()
 ```
 
-**[parse_project(paths: list[str]) -> AST]**
-- **Responsibility**: Convenience function to parse multiple PHP files into a single AST
+**[parse_project(project_path: str, file_filter: Callable[[Path], bool] = lambda p: p.suffix == '.php') -> AST]**
+- **Responsibility**: Convenience function to parse all PHP files in a project directory into a single AST
 - **Example**:
 ```python
 from php_parser_py import parse_project
-ast = parse_project(["file1.php", "file2.php"])
-files = ast.files()  # Returns all file nodes
+from pathlib import Path
+
+# Default: only .php files
+ast = parse_project("/path/to/project")
+files = ast.files()  # Returns all file nodes found recursively
+
+# Custom filter: include .php and .phtml files
+ast = parse_project(
+    "/path/to/project",
+    file_filter=lambda p: p.suffix in ['.php', '.phtml']
+)
 ```
 
 ---

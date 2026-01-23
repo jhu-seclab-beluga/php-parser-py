@@ -9,8 +9,8 @@ from typing import Any, Optional
 from static_php_py import PHP
 from static_php_py.exceptions import BinaryNotFoundError, DownloadError
 
+from php_parser_py._exceptions import ParseError, RunnerError
 from php_parser_py._resources import ensure_php_parser_extracted
-from php_parser_py.exceptions import ParseError, RunnerError
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ class Runner:
                 if result.stdout:
                     logger.error(f"PHP stdout: {result.stdout}")
                     error_msg += f"\nStdout: {result.stdout}"
-                
+
                 raise RunnerError(
                     error_msg,
                     stderr=result.stderr,
@@ -117,18 +117,14 @@ class Runner:
         except FileNotFoundError as e:
             error_msg = f"PHP binary not found: {self._php_binary}"
             logger.error(error_msg)
-            raise RunnerError(
-                error_msg, stderr=str(e), exit_code=1
-            ) from e
+            raise RunnerError(error_msg, stderr=str(e), exit_code=1) from e
         except Exception as e:
             error_msg = f"Failed to execute PHP script: {e}"
             logger.error(error_msg)
             # Don't wrap the error if it's already a RunnerError
             if isinstance(e, RunnerError):
                 raise
-            raise RunnerError(
-                error_msg, stderr=str(e), exit_code=1
-            ) from e
+            raise RunnerError(error_msg, stderr=str(e), exit_code=1) from e
 
     def parse(self, code: str) -> dict[str, Any]:
         """Invoke PHP-Parser parse + JsonSerializer.

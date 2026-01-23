@@ -20,7 +20,9 @@ class Edge(AbcEdgeQuerier):
         _edge_id: Tuple of (from_id, to_id, edge_type).
     """
 
-    def __init__(self, graph: Storage, f_nid: str, t_nid: str, e_type: str = "PARENT_OF") -> None:
+    def __init__(
+        self, graph: Storage, f_nid: str, t_nid: str, e_type: str = "PARENT_OF"
+    ) -> None:
         """Initialize Edge with storage and edge identifiers.
 
         Args:

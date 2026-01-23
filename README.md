@@ -63,13 +63,14 @@ file_node = ast.get_file(stmt_node.id)
 print(f"Function is in file: {file_node.get_property('filePath')}")
 ```
 
-### Parse Multiple Files (Project Structure)
+### Parse Project Directory
 
 ```python
 from php_parser_py import parse_project
+from pathlib import Path
 
-# Parse multiple files into a single AST
-ast = parse_project(["file1.php", "file2.php", "file3.php"])
+# Parse all PHP files in a project directory (recursively)
+ast = parse_project("/path/to/project")
 
 # Access all files
 for file_node in ast.files():
@@ -79,13 +80,18 @@ for file_node in ast.files():
         print(f"  Statement: {stmt.node_type}")
 
 # Access project and file paths
-ast = parse_project(["file1.php", "subdir/file2.php"])
 project = ast.project_node
 print(f"Project root: {project.get_property('path')}")
 
 for file_node in ast.files():
     print(f"File relative path: {file_node.get_property('path')}")
     print(f"File absolute path: {file_node.get_property('filePath')}")
+
+# Use custom file filter (e.g., include .php and .phtml files)
+ast = parse_project(
+    "/path/to/project",
+    file_filter=lambda p: p.suffix in ['.php', '.phtml']
+)
 ```
 
 ### Traverse AST
@@ -135,12 +141,12 @@ for file_path, code in generated.items():
     print(f"File: {file_path}")
     print(code)
 
-# Parse multiple files
-ast = parse_project(["file1.php", "file2.php"])
+# Parse project directory (recursively finds all PHP files)
+ast = parse_project("/path/to/project")
 
 # Generate code for all files
 generated = printer.print(ast)
-# Returns: {"file1.php": "...", "file2.php": "..."}
+# Returns: {"src/file1.php": "...", "src/file2.php": "..."}
 ```
 
 ## Advanced Usage
@@ -169,7 +175,7 @@ ast = parser.parse("<?php echo 'hello';")
 - **`parse_code(code: str) -> list[Node]`**: Parse PHP code string into raw statement nodes (no project/file structure)
 - **`parse(code: str) -> AST`**: Parse PHP code string and return AST with project/file structure (backward compatibility)
 - **`parse_file(path: str) -> AST`**: Parse a single PHP file and return AST with project/file structure
-- **`parse_project(paths: list[str]) -> AST`**: Parse multiple PHP files into a single AST with project structure
+- **`parse_project(project_path: str, file_filter: Callable[[Path], bool] = lambda p: p.suffix == '.php') -> AST`**: Parse all PHP files in a project directory into a single AST with project structure. `file_filter` function to customize which files are included (defaults to `.php` suffix check)
 
 ### Classes
 
@@ -203,7 +209,7 @@ ast = parser.parse("<?php echo 'hello';")
   - `parse_code(code)`: Parse code string into list of nodes
   - `parse(code)`: Parse code string into AST (backward compatibility)
   - `parse_file(path)`: Parse file into AST with project/file structure
-  - `parse_project(paths)`: Parse multiple files into AST with project structure
+  - `parse_project(project_path)`: Parse project directory into AST with project structure
 
 - **`PrettyPrinter`**: Generates PHP code
   - `__init__(php_binary_path=None, php_binary_url=None)`: Initialize printer
