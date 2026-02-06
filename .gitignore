@@ -117,8 +117,11 @@ Desktop.ini
 *.sqlite3
 
 # Generated directories
+.ast_cache/
 node_modules/
 dist/
 
+# Agents Rules Files
 .cursor/
 .agent/
+.github/instructions/
