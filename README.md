@@ -4,7 +4,7 @@ Python wrapper for [nikic/PHP-Parser](https://github.com/nikic/PHP-Parser) built
 
 - **Automated**: Uses [static-php-cli](https://github.com/static-php-cli/static-php-cli) binaries (no local PHP required).
 - **Graph-Based**: AST nodes are stored in a queryable graph database.
-- **Accurate**: Full support for PHP-Parser 4.x AST structure.
+- **Accurate**: Full support for PHP-Parser 4.19.4 AST structure.
 
 ## Quick Start
 ```bash
@@ -19,11 +19,10 @@ ast = parse_file("src/User.php")
 # ast = parse_project("src/")
 
 # 2. Traverse
-root = ast.root_node
-files = ast.files()
+files = ast.file_nodes()
 
 # Find specific nodes
-functions = [n for n in ast.nodes() if n.node_type == "Stmt_Function"]
+functions = ast.nodes(lambda n: n.node_type == "Stmt_Function")
 
 # Get properties (scalars)
 for func in functions:
@@ -36,6 +35,9 @@ for func in functions:
 ```
 
 ## Documentation
+
+- **[Architecture & Design](docs/design.md)**
+  Detailed design documentation covering internal architecture, class specifications, and design rationale.
 
 - **[AST Structure Reference](docs/libs/php_parser_ast.md)**  
   Complete table of all node types, subnodes (children), and properties. Verified against PHP-Parser source.

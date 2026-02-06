@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from cpg2py import Storage
+from static_php_py import PHP
 
 from php_parser_py._ast import AST
 from php_parser_py._exceptions import ParseError, RunnerError
@@ -27,21 +28,13 @@ class Parser:
         _runner: Runner instance for PHP-Parser invocation.
     """
 
-    def __init__(
-        self,
-        php_binary_path: Optional[Path] = None,
-        php_binary_url: Optional[str] = None,
-    ) -> None:
+    def __init__(self, php: Optional[PHP] = None) -> None:
         """Initialize Parser with Runner.
 
         Args:
-            php_binary_path: Optional path to local PHP binary.
-            php_binary_url: Optional URL to download PHP binary from.
+            php: Optional PHP instance. If not provided, uses builtin PHP.
         """
-        self._runner = Runner(
-            php_binary_path=php_binary_path,
-            php_binary_url=php_binary_url,
-        )
+        self._runner = Runner(php=php)
 
     def parse_code(self, code: str) -> list[Node]:
         """Parse PHP code string into a list of top-level statement nodes.

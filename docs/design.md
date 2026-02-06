@@ -104,15 +104,12 @@ line = node.get_property("startLine", "lineno")  # Try multiple names
   - **Input**: From ID, To ID, Edge type
   - **Output**: PHPASTEdge instance or None
 
-- **[@property root_node -> PHPASTNode | None]**
-  - **Behavior**: Returns the root node of the AST (project node for project structures)
-  - **Output**: Root Node instance or None
 
-- **[@property project_node -> PHPASTNode | None]**
+- **[project_node() -> PHPASTNode | None]**
   - **Behavior**: Alias for root_node, returns project node
   - **Output**: Project Node instance or None
 
-- **[files() -> list[PHPASTNode]]**
+- **[file_nodes() -> list[PHPASTNode]]**
   - **Behavior**: Returns all file nodes in the project
   - **Output**: List of File Node instances, sorted by file path
   - **Note**: Only works for ASTs with project structure (created via parse_file or parse_project)
@@ -162,6 +159,11 @@ json_str = graph.to_json()
 
 - **Properties**:
   - `_runner: PHPRunner` - PHP binary execution handler
+
+- **[__init__(self, php: PHP | None = None) -> None]**
+  - **Behavior**: Initializes parser with Runner
+  - **Input**: Optional `static_php_py.PHP` instance
+  - **Note**: If `php` is not provided, defaults to `PHP.builtin()`
 
 - **[parse(code: str) -> AST]**
   - **Behavior**: Parses PHP code via PHP-Parser, creates temporary file structure for backward compatibility
@@ -228,6 +230,11 @@ json_str = graph.to_json()
 - **Properties**:
   - `_runner: PHPRunner` - PHP binary execution handler
 
+- **[__init__(self, php: PHP | None = None) -> None]**
+  - **Behavior**: Initializes PrettyPrinter with Runner
+  - **Input**: Optional `static_php_py.PHP` instance
+  - **Note**: If `php` is not provided, defaults to `PHP.builtin()`
+
 - **[print(ast: AST) -> dict[str, str]]**
   - **Behavior**: Reconstructs JSON from AST for each file, invokes PHP-Parser to generate code
   - **Input**: AST instance (may contain multiple files)
@@ -258,8 +265,13 @@ json_str = graph.to_json()
 - **Responsibility**: Manages PHP-Parser invocation via static-php-py.
 
 - **Properties**:
-  - `_php_binary: Path` - Path to static PHP binary (from static-php-py)
-  - `_phar_path: Path` - Path to PHP-Parser PHAR file
+- **Properties**:
+  - `_php: PHP` - PHP binary wrapper
+
+- **[__init__(self, php: PHP | None = None) -> None]**
+  - **Behavior**: Initializes Runner with PHP binary wrapper
+  - **Input**: Optional `static_php_py.PHP` instance
+  - **Note**: If `php` is not provided, defaults to `PHP.builtin()`
 
 - **[execute(script: str, stdin: str) -> str]**
   - **Behavior**: Executes PHP script with stdin input, returns stdout
@@ -307,7 +319,7 @@ ast = parse("<?php echo 'hello';")
 ```python
 from php_parser_py import parse_file
 ast = parse_file("example.php")
-files = ast.files()
+files = ast.file_nodes()
 ```
 
 **[parse_project(project_path: str, file_filter: Callable[[Path], bool] = lambda p: p.suffix == '.php') -> AST]**
@@ -319,7 +331,7 @@ from pathlib import Path
 
 # Default: only .php files
 ast = parse_project("/path/to/project")
-files = ast.files()  # Returns all file nodes found recursively
+files = ast.file_nodes()  # Returns all file nodes found recursively
 
 # Custom filter: include .php and .phtml files
 ast = parse_project(

@@ -104,7 +104,7 @@ class TestParser:
             ast = parser.parse_file(temp_file)
 
             # Check project node has path property
-            project = ast.project_node
+            project = ast.project_node()
             assert project is not None
             project_path = project.get_property("path")
             assert project_path is not None
@@ -112,7 +112,7 @@ class TestParser:
             assert project_path == str(Path(temp_file).parent.resolve())
 
             # Check file node has path and filePath properties
-            files = ast.files()
+            files = ast.file_nodes()
             assert len(files) == 1
             file_node = files[0]
 
@@ -150,14 +150,14 @@ class TestParser:
             ast = parser.parse_project(str(project_root))
 
             # Check project node has path property
-            project = ast.project_node
+            project = ast.project_node()
             assert project is not None
             project_path = project.get_property("path")
             assert project_path is not None
             assert project_path == str(project_root.resolve())
 
             # Check file nodes have correct path properties
-            files = ast.files()
+            files = ast.file_nodes()
             assert len(files) == 2
 
             file_paths = {file_node.get_property("path") for file_node in files}
@@ -196,13 +196,13 @@ class TestParser:
             ast = parser.parse_project(str(project_root))
 
             # Check project node has correct path
-            project = ast.project_node
+            project = ast.project_node()
             assert project is not None
             project_path = project.get_property("path")
             assert project_path == str(project_root.resolve())
 
             # Check all files are found
-            files = ast.files()
+            files = ast.file_nodes()
             assert len(files) == 2
 
             file_paths = {file_node.get_property("path") for file_node in files}
@@ -235,7 +235,7 @@ class TestParser:
 
             # Default filter (only .php files)
             ast1 = parser.parse_project(str(project_root))
-            files1 = ast1.files()
+            files1 = ast1.file_nodes()
             assert len(files1) == 1
             file_paths1 = {f.get_property("path") for f in files1}
             assert any("file1.php" in p for p in file_paths1)
@@ -244,7 +244,7 @@ class TestParser:
             ast2 = parser.parse_project(
                 str(project_root), file_filter=lambda p: p.suffix in [".php", ".phtml"]
             )
-            files2 = ast2.files()
+            files2 = ast2.file_nodes()
             assert len(files2) == 2
             file_paths2 = {f.get_property("path") for f in files2}
             assert any("file1.php" in p for p in file_paths2)
@@ -255,5 +255,5 @@ class TestParser:
                 str(project_root),
                 file_filter=lambda p: p.suffix == ".php" and "file1" not in p.name,
             )
-            files3 = ast3.files()
+            files3 = ast3.file_nodes()
             assert len(files3) == 0  # file1.php is excluded, no other .php files

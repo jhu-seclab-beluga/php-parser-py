@@ -103,7 +103,7 @@ class TestAST:
             parser = Parser()
             ast = parser.parse_file(temp_file)
 
-            project = ast.project_node
+            project = ast.project_node()
             assert project is not None
             assert project.get_property("nodeType") == "Project"
             assert project.get_property("path") is not None
@@ -111,7 +111,7 @@ class TestAST:
             os.unlink(temp_file)
 
     def test_files_method(self, tmp_path):
-        """Test files() method returns file nodes."""
+        """Test file_nodes() method returns file nodes."""
         import os
         import tempfile
         from pathlib import Path
@@ -126,7 +126,7 @@ class TestAST:
             parser = Parser()
             ast = parser.parse_file(temp_file)
 
-            files = ast.files()
+            files = ast.file_nodes()
             assert len(files) == 1
 
             file_node = files[0]

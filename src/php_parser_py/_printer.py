@@ -1,8 +1,9 @@
 """PrettyPrinter class for PHP code generation."""
 
 import logging
-from pathlib import Path
 from typing import Optional
+
+from static_php_py import PHP
 
 from php_parser_py._ast import AST
 from php_parser_py._runner import Runner
@@ -22,18 +23,15 @@ class PrettyPrinter:
 
     def __init__(
         self,
-        php_binary_path: Optional[Path] = None,
-        php_binary_url: Optional[str] = None,
+        php: Optional[PHP] = None,
     ) -> None:
         """Initialize PrettyPrinter with Runner.
 
         Args:
-            php_binary_path: Optional path to local PHP binary.
-            php_binary_url: Optional URL to download PHP binary from.
+           php: Optional PHP instance. If not provided, uses builtin PHP.
         """
         self._runner = Runner(
-            php_binary_path=php_binary_path,
-            php_binary_url=php_binary_url,
+            php=php,
         )
 
     def print(self, ast: AST) -> dict[str, str]:
@@ -50,7 +48,7 @@ class PrettyPrinter:
         Raises:
             RunnerError: If PHP-Parser execution fails.
         """
-        file_nodes = ast.files()
+        file_nodes = ast.file_nodes()
 
         if not file_nodes:
             # No file structure - export all statements as a single code block
@@ -98,7 +96,7 @@ class PrettyPrinter:
             RunnerError: If PHP-Parser execution fails.
         """
         # Find file node by its relative path property
-        for file_node in ast.files():
+        for file_node in ast.file_nodes():
             if file_node.get_property("path") == relative_path:
                 file_hash = file_node.id
                 json_str = ast.to_json(file_hash=file_hash)

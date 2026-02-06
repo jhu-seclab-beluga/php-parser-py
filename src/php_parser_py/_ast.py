@@ -77,35 +77,25 @@ class AST(AbcGraphQuerier[Node, Edge]):
             return None
         return Edge(self._storage, fid, tid, eid)
 
-    @property
-    def root_node(self) -> Optional[Node]:
-        """Return the root project node of the AST.
+    def project_node(self) -> Optional[Node]:
+        """Return the project node.
 
-        The root node is always the project node with ID "project".
+        The project node is the root of the AST with ID "project".
 
         Returns:
-            Root Node instance or None if root node doesn't exist.
+            Project Node instance or None if not found.
         """
         if not self._storage.contains_node(self._root_node_id):
             return None
         return Node(self._storage, self._root_node_id)
 
-    @property
-    def project_node(self) -> Optional[Node]:
-        """Return the project node (alias for root_node).
-
-        Returns:
-            Project Node instance or None if not found.
-        """
-        return self.root_node
-
-    def files(self) -> list[Node]:
+    def file_nodes(self) -> list[Node]:
         """Return all file nodes in the project.
 
         Returns:
             List of File Node instances.
         """
-        if not self.root_node:
+        if not self.project_node():
             return []
 
         file_nodes = []
@@ -204,7 +194,7 @@ class AST(AbcGraphQuerier[Node, Edge]):
             top_level_nodes = self._get_file_statements(file_hash)
         else:
             # Try to export from file structure first
-            file_nodes = self.files()
+            file_nodes = self.file_nodes()
             if file_nodes:
                 # Export all files (flattened)
                 top_level_nodes = []

@@ -3,7 +3,6 @@
 import json
 import logging
 import subprocess
-from pathlib import Path
 from typing import Any, Optional
 
 from static_php_py import PHP
@@ -26,41 +25,26 @@ class Runner:
         _vendor_dir: Path to directory containing PHP-Parser PHAR.
     """
 
-    def __init__(
-        self,
-        php_binary_path: Optional[Path] = None,
-        php_binary_url: Optional[str] = None,
-    ) -> None:
-        """Initialize Runner with PHP binary and PHP-Parser paths.
+    def __init__(self, php: Optional[PHP] = None) -> None:
+        """Initialize Runner with PHP binary wrapper.
 
         Args:
-            php_binary_path: Optional path to local PHP binary.
-            php_binary_url: Optional URL to download PHP binary from.
+            php: Optional PHP instance. If not provided, uses builtin PHP.
 
         Raises:
-            RunnerError: If PHP binary or PHP-Parser cannot be located.
+            RunnerError: If PHP binary cannot be located.
         """
         self._vendor_dir = ensure_php_parser_extracted()
 
-        # Determine PHP binary source with priority: custom path > custom URL > built-in
         try:
-            if php_binary_path is not None:
-                # Use custom local PHP binary
-                php = PHP.local(php_binary_path)
-            elif php_binary_url is not None:
-                # Download PHP binary from custom URL
-                php = PHP.remote(php_binary_url)
-            else:
-                # Use built-in PHP binary from static-php-py
-                php = PHP.builtin()
-
-            self._php_binary = php.path()
-
+            self._php = php if php is not None else PHP.builtin()
+            self._php_binary = self._php.path()
+            
         except BinaryNotFoundError as e:
             raise RunnerError(
                 f"PHP binary not found: {e}. "
                 "The built-in PHP binary may not be available for your platform. "
-                "Please provide a custom PHP binary path or URL.",
+                "Please provide a custom PHP instance.",
                 exit_code=1,
             ) from e
         except DownloadError as e:
