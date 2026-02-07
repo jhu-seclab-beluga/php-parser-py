@@ -1,5 +1,7 @@
 # php-parser-py
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jhu-seclab-beluga/php-parser-py)
+
 Python wrapper for [nikic/PHP-Parser](https://github.com/nikic/PHP-Parser) built on the [cpg2py](https://github.com/jhu-seclab/cpg2py) graph framework.
 
 - **Automated**: Uses [static-php-cli](https://github.com/static-php-cli/static-php-cli) binaries (no local PHP required).
