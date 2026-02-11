@@ -37,9 +37,11 @@
   - **Behavior**: Returns the node identifier
   - **Output**: Node ID string
 
-- **[@property node_type -> str | None]** (public API; design alias: label)
+- **[@property node_type -> str]** (public API)
   - **Behavior**: Returns `nodeType` from stored JSON (e.g. "Stmt_Function")
-  - **Output**: Node type string or None if not set
+  - **Output**: Node type string (always present in valid nodes)
+  - **Raises**: `TypeError` if nodeType is not a string
+  - **Note**: All nodes (from PHP-Parser, Project, File) must have `nodeType`
 
 - **[@property all_properties -> dict]**
   - **Behavior**: Returns all stored properties (the complete JSON object for this node)
@@ -51,12 +53,29 @@
   - **Output**: Property value or None
   - **Note**: Use for accessing any JSON field dynamically
 
+- **Position Attributes** (all return `int` or raise `TypeError`):
+  - `start_line`, `end_line`: Line numbers (from PHP-Parser attributes)
+  - `start_file_pos`, `end_file_pos`: Byte offsets in file
+  - `start_token_pos`, `end_token_pos`: Token indices
+  - **Note**: For Project node, all pos attributes are -1 (sentinel for logical node)
+  - **Note**: For File node, start_pos=0/1, end_pos computed from children
+
+- **Special Attributes**:
+  - `comments` → `list[Any]`: List of Comment objects (may be empty)
+  - **Note**: String values representing integers (e.g. `"123"`) are automatically converted to int
+
 - **Example Usage**:
 ```python
-# Dynamic property access - no hardcoded field names
-node = graph.first_node(lambda n: n.label == "Stmt_Function")
+# Query by node type (using node_type property)
+node = graph.first_node(lambda n: n.node_type == "Stmt_Function")
+line = node.start_line  # Returns int (no None possible)
+
+# Position info always available on all nodes
+if node.start_line >= 0:  # Check if from real source (not Project/File)
+    print(f"Found at line {node.start_line}")
+
+# Dynamic property access for PHP-Parser fields
 name_prop = node.get_property("name")  # Returns Identifier node or dict
-line = node.get_property("startLine", "lineno")  # Try multiple names
 ```
 
 ---
@@ -181,10 +200,14 @@ json_str = graph.to_json()
   - **Raises**: `ParseError`, `FileNotFoundError`
   - **Structure**: 
     - Project node (ID: `"project"`, fixed)
-      - `path` property: File's directory (project root)
+      - `nodeType`: "Project"
+      - `absolutePath` property: Project root directory
+      - Position: `startLine = -1, endLine = -1` (sentinel for non-source node)
     - File node (ID: 8-character hex hash of file path)
-      - `path` property: Relative path from project root (filename)
-      - `filePath` property: Absolute file path
+      - `nodeType`: "File"
+      - `absolutePath` property: Absolute file path
+      - `relativePath` property: Relative path from project root
+      - Position: `startLine = 1, endLine = computed from children`
     - Statement nodes (IDs: `{hex}_1`, `{hex}_2`, ...)
 
 - **[parse_project(project_path: str, file_filter: Callable[[Path], bool] = lambda p: p.suffix == '.php') -> AST]**
@@ -200,10 +223,14 @@ json_str = graph.to_json()
     - Only processes files that pass the filter and are regular files
   - **Structure**: 
     - Single project node (ID: `"project"`, fixed)
-      - `path` property: Project root directory (absolute path)
+      - `nodeType`: "Project"
+      - `absolutePath` property: Project root directory (absolute path)
+      - Position: `startLine = -1, endLine = -1` (sentinel)
     - Multiple file nodes (each with unique hex hash ID)
-      - `path` property: Relative path from project root
-      - `filePath` property: Absolute file path
+      - `nodeType`: "File"
+      - `absolutePath` property: Absolute file path
+      - `relativePath` property: Relative path from project root
+      - Position: `startLine = 1, endLine = computed from children`
     - Statement nodes within each file (prefixed with file hash)
 
 - **[_json_to_storage(json_data: list | dict) -> Storage]** (internal)
@@ -389,10 +416,10 @@ PHP-Parser's JSON structure is mapped to cpg2py Storage mechanically:
 
 | Node ID | Properties |
 |---------|------------|
-| `project` | `{nodeType: "Project", label: "Project"}` |
-| `a1b2c3d4` | `{nodeType: "File", label: "File", filePath: "/path/to/file.php"}` |
-| `a1b2c3d4_1` | `{nodeType: "Stmt_Function", startLine: 1, ...}` |
-| `a1b2c3d4_2` | `{nodeType: "Identifier", name: "foo"}` |
+|| `project` | `{nodeType: "Project", absolutePath: "/path/to", startLine: -1, endLine: -1, ...}` |
+|| `a1b2c3d4` | `{nodeType: "File", absolutePath: "/path/to/file.php", relativePath: "file.php", startLine: 1, endLine: N, ...}` |
+|| `a1b2c3d4_1` | `{nodeType: "Stmt_Function", startLine: 1, ...}` |
+|| `a1b2c3d4_2` | `{nodeType: "Identifier", name: "foo"}` |
 
 | Edge (from, to, type) | Properties |
 |-----------------------|------------|
@@ -402,13 +429,16 @@ PHP-Parser's JSON structure is mapped to cpg2py Storage mechanically:
 
 **Mapping Rules**:
 1. Each object with `nodeType` → new node with unique ID
-2. `nodeType` value → `label` property (alias)
-3. `attributes` fields → flattened to node properties
+2. `nodeType` value → stored directly as `nodeType` property
+3. `attributes` fields → flattened to node properties (e.g., `startLine`, `endLine`)
 4. Scalar fields (`name: "foo"`) → direct properties
 5. Object fields (nested node) → PARENT_OF edge + field name in edge properties
 6. Array fields → PARENT_OF edges with `index` property for ordering
-7. Null fields → not stored (or stored as explicit null)
-8. Project/File nodes are virtual nodes not present in PHP-Parser JSON
+7. Null fields → not stored
+8. Project/File nodes are special synthetic nodes:
+   - Always have `nodeType` ("Project" or "File")
+   - Position attributes set explicitly (`startLine`, `endLine`, `startFilePos`, etc.)
+   - Not present in original PHP-Parser JSON
 
 ---
 
@@ -417,15 +447,17 @@ PHP-Parser's JSON structure is mapped to cpg2py Storage mechanically:
 For code generation, Storage is converted back to PHP-Parser's exact JSON format:
 
 **Algorithm**:
-1. Find root nodes (no incoming PARENT_OF edges)
+1. Find root statement nodes (no incoming PARENT_OF edges, excluding Project/File)
 2. For each node, reconstruct JSON object:
-   - Set `nodeType` from `label` property
-   - Reconstruct `attributes` dict from line/column properties
+   - Set `nodeType` from node's `nodeType` property
+   - Extract and reconstruct `attributes` dict from position properties (startLine, endLine, etc.)
    - For each outgoing PARENT_OF edge:
      - Get field name from edge `field` property
      - If edge has `index`, collect into array at that index
      - Recursively reconstruct child node
-3. Return array of root nodes (for statement lists)
+   - Flatten attributes into the result if non-empty
+3. Return array of root statement nodes (for statement lists)
+4. Exclude Project/File nodes from reconstruction (they are synthetic)
 
 **Output Fidelity**: The reconstructed JSON is structurally identical to the original PHP-Parser output, enabling lossless round-trip.
 
@@ -433,17 +465,36 @@ For code generation, Storage is converted back to PHP-Parser's exact JSON format
 
 ## Exception Classes
 
-**ParseError**: Raised when PHP-Parser reports syntax error.
-- Properties: `message: str`, `line: int | None`
-- Source: Extracted from PHP-Parser's error output
+This module defines three specific exception classes that preserve context and enable meaningful error handling at appropriate abstraction levels.
 
-**RunnerError**: Raised when PHP process execution fails.
-- Properties: `message: str`, `stderr: str`, `exit_code: int`
+**ParseError**: Raised when PHP-Parser reports a syntax error in the source code.
+- **Purpose**: Indicates input validation failure (syntax error in PHP code)
+- **Context**: Includes error message and line number where error occurred
+- **Properties**: `message: str`, `line: int | None`
+- **Handling**: Caught in `Parser.parse_*()` methods and re-raised with context; callers should handle as input validation error
+- **Example**: User provides invalid PHP syntax
 
-**NodeNotInFileError**: Raised when a node has no containing file (e.g. project node or orphan).
-- Raised by: `get_file(node_id)` when the node is not under any file node
-- Properties: `node_id: str`, `message: str`
-- Use: Avoids returning None from `get_file`; callers handle "not in a file" via exception
+**RunnerError**: Raised when PHP process execution fails (binary not found, execution timeout, etc.).
+- **Purpose**: Indicates resource/process error (PHP binary unavailable or execution failure)
+- **Context**: Includes error message, stderr output, and exit code for debugging
+- **Properties**: `message: str`, `stderr: str`, `exit_code: int`
+- **Handling**: Caught in `Runner.execute()` and passed to higher layers; indicates system issue requiring user action
+- **Example**: PHP binary missing or insufficient permissions
+
+**NodeNotInFileError**: Raised when `get_file(node_id)` is called on a node that has no containing file.
+- **Purpose**: Indicates invalid API usage (accessing structural node as statement node)
+- **Context**: Includes node ID and descriptive message
+- **Properties**: `node_id: str`, `message: str`
+- **Handling**: Caught by callers; forces explicit handling of "not under file" case instead of returning None
+- **Example**: Calling `get_file()` on the project node
+
+### Exception Handling Strategy
+
+All exceptions follow these patterns:
+1. **Specific exception types**: Each error category has its own exception class
+2. **Meaningful context**: Exception carries relevant information (line numbers, stderr, node IDs)
+3. **Appropriate abstraction level**: Exceptions are caught and transformed at layer boundaries (e.g., `Runner` catches PHP errors, `Parser` catches `RunnerError`)
+4. **Fail fast**: Exceptions are raised immediately on error detection, not silently caught or converted to default values
 
 ---
 
@@ -470,9 +521,10 @@ php_parser_py/
 
 ### parse.php
 
+The parse script demonstrates proper exception handling with specific error types:
+
 ```php
 <?php
-// Bundled with PHP-Parser PHAR
 require_once __DIR__ . '/php-parser.phar';
 
 use PhpParser\ParserFactory;
@@ -486,6 +538,7 @@ $parser = (new ParserFactory())->createForNewestSupportedVersion();
 try {
     $stmts = $parser->parse($code, $errorHandler);
     if ($errorHandler->hasErrors()) {
+        // Input validation error: syntax error in PHP code
         $errors = array_map(fn($e) => [
             'message' => $e->getMessage(),
             'line' => $e->getStartLine()
@@ -496,10 +549,16 @@ try {
     $serializer = new JsonSerializer();
     echo $serializer->serialize($stmts);
 } catch (Exception $e) {
+    // Unexpected error: should include type/context for debugging
     echo json_encode(['error' => $e->getMessage()]);
     exit(1);
 }
 ```
+
+**Error Handling Flow**:
+1. Validation errors (syntax) → `$errorHandler->getErrors()` → JSON response with error details
+2. Unexpected errors → caught as generic `Exception` → JSON response (improve by catching specific types)
+3. Success → JSON-serialized AST
 
 ### print.php
 
