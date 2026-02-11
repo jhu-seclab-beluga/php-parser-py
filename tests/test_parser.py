@@ -105,7 +105,7 @@ class TestParser:
 
             # Check project node has path property
             project = ast.project_node()
-            project_path = project.get_property("path")
+            project_path = project.get_property("absolutePath")
             assert project_path is not None
             # Use resolve() to handle symlinks (e.g., /var -> /private/var on macOS)
             assert project_path == str(Path(temp_file).parent.resolve())
@@ -115,8 +115,8 @@ class TestParser:
             assert len(files) == 1
             file_node = files[0]
 
-            file_path = file_node.get_property("path")
-            file_abs_path = file_node.get_property("filePath")
+            file_path = file_node.get_property("relativePath")
+            file_abs_path = file_node.get_property("absolutePath")
 
             assert file_path is not None
             assert file_abs_path is not None
@@ -150,7 +150,7 @@ class TestParser:
 
             # Check project node has path property
             project = ast.project_node()
-            project_path = project.get_property("path")
+            project_path = project.get_property("absolutePath")
             assert project_path is not None
             assert project_path == str(project_root.resolve())
 
@@ -158,8 +158,8 @@ class TestParser:
             files = ast.file_nodes()
             assert len(files) == 2
 
-            file_paths = {file_node.get_property("path") for file_node in files}
-            file_abs_paths = {file_node.get_property("filePath") for file_node in files}
+            file_paths = {file_node.get_property("relativePath") for file_node in files}
+            file_abs_paths = {file_node.get_property("absolutePath") for file_node in files}
 
             # Relative paths should be src/file1.php and src/file2.php
             assert str(Path("src") / "file1.php") in file_paths
@@ -195,14 +195,14 @@ class TestParser:
 
             # Check project node has correct path
             project = ast.project_node()
-            project_path = project.get_property("path")
+            project_path = project.get_property("absolutePath")
             assert project_path == str(project_root.resolve())
 
             # Check all files are found
             files = ast.file_nodes()
             assert len(files) == 2
 
-            file_paths = {file_node.get_property("path") for file_node in files}
+            file_paths = {file_node.get_property("relativePath") for file_node in files}
             # Relative paths should be src/file1.php and src/sub/file2.php
             assert str(Path("src") / "file1.php") in file_paths
             assert str(Path("src") / "sub" / "file2.php") in file_paths
@@ -234,7 +234,7 @@ class TestParser:
             ast1 = parser.parse_project(str(project_root))
             files1 = ast1.file_nodes()
             assert len(files1) == 1
-            file_paths1 = {f.get_property("path") for f in files1}
+            file_paths1 = {f.get_property("relativePath") for f in files1}
             assert any("file1.php" in p for p in file_paths1)
 
             # Custom filter (include .php and .phtml)
@@ -243,7 +243,7 @@ class TestParser:
             )
             files2 = ast2.file_nodes()
             assert len(files2) == 2
-            file_paths2 = {f.get_property("path") for f in files2}
+            file_paths2 = {f.get_property("relativePath") for f in files2}
             assert any("file1.php" in p for p in file_paths2)
             assert any("file2.phtml" in p for p in file_paths2)
 

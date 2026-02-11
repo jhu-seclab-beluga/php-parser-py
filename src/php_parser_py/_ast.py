@@ -112,7 +112,7 @@ class AST(AbcGraphQuerier[Node, Edge]):
             return []
 
         file_nodes = [n for n in self.succ(project) if n.node_type == "File"]
-        return sorted(file_nodes, key=lambda n: n.get("filePath", ""))
+        return sorted(file_nodes, key=lambda n: n.get("absolutePath", ""))
 
     def get_file_node(self, node_id: str) -> Node:
         """Get the file node that contains the given node.

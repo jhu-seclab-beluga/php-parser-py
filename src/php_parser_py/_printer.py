@@ -59,7 +59,7 @@ class PrettyPrinter:
         # Generate code for each file
         result: dict[str, str] = {}
         for file_node in file_nodes:
-            file_path = file_node.get_property("filePath", "")
+            file_path = file_node.get_property("absolutePath", "")
             file_hash = file_node.id
 
             # Get JSON for this file only
@@ -97,7 +97,7 @@ class PrettyPrinter:
         """
         # Find file node by its relative path property
         for file_node in ast.file_nodes():
-            if file_node.get_property("path") == relative_path:
+            if file_node.get_property("relativePath") == relative_path:
                 file_hash = file_node.id
                 json_str = ast.to_json(file_hash=file_hash)
                 return self._runner.print(json_str)

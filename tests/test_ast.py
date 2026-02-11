@@ -105,7 +105,7 @@ class TestAST:
 
             project = ast.project_node()
             assert project.get_property("nodeType") == "Project"
-            assert project.get_property("path") is not None
+            assert project.get_property("absolutePath") is not None
         finally:
             os.unlink(temp_file)
 
@@ -130,8 +130,8 @@ class TestAST:
 
             file_node = files[0]
             assert file_node.get_property("nodeType") == "File"
-            assert file_node.get_property("path") is not None
-            assert file_node.get_property("filePath") is not None
+            assert file_node.get_property("relativePath") is not None
+            assert file_node.get_property("absolutePath") is not None
         finally:
             os.unlink(temp_file)
 

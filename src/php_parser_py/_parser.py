@@ -169,11 +169,7 @@ class Parser:
             storage.add_node(project_id)
             storage.set_node_props(
                 project_id,
-                {
-                    "nodeType": "Project",
-                    "label": "Project",
-                    "path": str(project_path_obj),
-                },
+                {"nodeType": "Project", "absolutePath": str(project_path)},
             )
             return AST(storage, root_node_id="project")
 
@@ -226,7 +222,7 @@ class Parser:
         storage.add_node(project_id)
         storage.set_node_props(
             project_id,
-            {"nodeType": "Project", "label": "Project", "path": str(project_path)},
+            {"nodeType": "Project", "absolutePath": str(project_path)},
         )
 
         # Create file nodes and process their statements
@@ -263,9 +259,8 @@ class Parser:
                 file_id,
                 {
                     "nodeType": "File",
-                    "label": "File",
-                    "filePath": str(file_path),
-                    "path": str(relative_path),
+                    "absolutePath": str(file_path),
+                    "relativePath": str(relative_path),
                     "startLine": 1,
                     "endLine": file_end_line,
                     "startFilePos": 0,
@@ -293,8 +288,7 @@ class Parser:
             project_id,
             {
                 "nodeType": "Project",
-                "label": "Project",
-                "path": str(project_path),
+                "absolutePath": str(project_path),
                 "startLine": -1,
                 "endLine": -1,
                 "startFilePos": -1,
