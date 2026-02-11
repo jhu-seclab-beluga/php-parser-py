@@ -79,14 +79,14 @@ php-parser-py serves as a thin wrapper that bridges PHP-Parser's JSON serializat
   - **Relationships:** Produced by PHP-Parser during parsing, consumed by PHP-Parser during code generation, stored in PHPASTGraph as cpg2py Storage.
 
 - **PHPASTNode**
-  - **Definition:** A graph node extending cpg2py's AbcNodeQuerier that wraps a single AST JSON node. It provides dynamic property access to all JSON fields without hardcoded field definitions.
-  - **Scope:** Includes all properties from the original JSON node. Excludes type-specific behavior or validation.
-  - **Relationships:** Contained within PHPASTGraph, linked to other nodes via edges, accessed via cpg2py traversal methods.
+  - **Definition:** A graph node extending cpg2py's AbcNodeQuerier that wraps a single AST JSON node or synthetic node (Project/File). It provides dynamic property access to all JSON fields without hardcoded field definitions, and typed access to position attributes.
+  - **Scope:** Includes all properties from the original JSON node, plus synthesized properties for Project/File nodes (absolutePath, relativePath, position attributes). Excludes type-specific behavior or validation.
+  - **Relationships:** Contained within PHPASTGraph, linked to other nodes via PARENT_OF edges, accessed via cpg2py traversal methods (succ, prev, ancestors, descendants).
 
 - **PHPASTGraph**
-  - **Definition:** A graph structure extending cpg2py's AbcGraphQuerier that stores the complete AST. It uses cpg2py's Storage for node and edge management, representing parent-child relationships as typed edges.
-  - **Scope:** Includes all AST nodes and their relationships. Provides cpg2py-compatible traversal methods.
-  - **Relationships:** Contains PHPASTNode instances, constructed from AST JSON, reconstructs AST JSON for code generation.
+  - **Definition:** A graph structure extending cpg2py's AbcGraphQuerier that stores the complete AST including synthetic Project and File structural nodes. It uses cpg2py's Storage for node and edge management, representing parent-child relationships as PARENT_OF typed edges with field metadata.
+  - **Scope:** Includes all AST nodes (from PHP-Parser and synthetic nodes), their relationships, and project/file organization. Provides cpg2py-compatible traversal methods for graph analysis.
+  - **Relationships:** Contains PHPASTNode instances, constructed from AST JSON with added synthetic nodes, reconstructs AST JSON for code generation.
 
 - **PHP Runner**
   - **Definition:** The component that manages communication with PHP-Parser via static-php-py. It invokes PHP-Parser for parsing and code generation, handling input/output serialization.
@@ -134,17 +134,17 @@ php-parser-py serves as a thin wrapper that bridges PHP-Parser's JSON serializat
 
 ## 4. Scenarios
 
-- **Typical:** A security researcher parses a PHP file and queries for all function definitions using cpg2py's traversal methods. They filter nodes by the label property to find specific node types, then access node properties to extract function names. All type information comes from PHP-Parser's JSON.
+- **Typical:** A security researcher parses a PHP file and queries for all function definitions using cpg2py's traversal methods. They filter nodes by the node_type property to find specific node types, then access node properties to extract function names and position information. All type information comes from PHP-Parser's JSON or synthetic node markers.
 
-- **Typical:** A developer extracts all variable assignments from a codebase. They traverse the graph using descendants method, filter by label, and collect property values. The dynamic property access works for any node type without predefined schemas.
+- **Typical:** A developer extracts all variable assignments from a codebase. They traverse the graph using descendants method, filter by node_type, and collect property values. The dynamic property access works for any node type without predefined schemas.
 
 - **Boundary:** A user provides PHP code with syntax errors. PHP-Parser reports errors during parsing, and PHP Runner propagates the error information to the user. No partial AST is produced; error handling follows PHP-Parser's behavior.
 
-- **Boundary:** PHP-Parser is updated with new node types. Since this project has no hardcoded type definitions, new types appear automatically in the label property. All properties remain accessible via dynamic property access.
+- **Boundary:** PHP-Parser is updated with new node types. Since this project has no hardcoded type definitions, new types appear automatically in the node_type property. All properties remain accessible via dynamic property access without code changes.
 
-- **Interaction:** A refactoring tool modifies property values in the graph, then regenerates code. The JSON reconstruction preserves all structural relationships. PHP-Parser's code generator produces valid PHP reflecting the modifications.
+- **Interaction:** A refactoring tool modifies property values in the graph and position information (File node's endLine), then regenerates code. The JSON reconstruction preserves all structural relationships and position attributes. PHP-Parser's code generator produces valid PHP reflecting the modifications.
 
-- **Interaction:** A multi-language analyzer combines PHP ASTs with other language graphs in a cpg2py pipeline. PHPASTGraph is fully compatible with cpg2py's interface, enabling unified traversal and analysis across languages.
+- **Interaction:** A multi-language analyzer combines PHP ASTs with other language graphs in a cpg2py pipeline. PHPASTGraph is fully compatible with cpg2py's interface, enabling unified traversal and analysis across languages. Project and File nodes can be queried like any other graph nodes.
 
 ---
 
