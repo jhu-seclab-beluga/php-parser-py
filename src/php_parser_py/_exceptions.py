@@ -21,6 +21,18 @@ class ParseError(Exception):
         self.line = line
 
 
+class NodeNotInFileError(Exception):
+    """Raised when a node has no containing file (e.g. project node or orphan).
+
+    Use when get_file(node_id) is called and the node is not under any file node.
+    """
+
+    def __init__(self, node_id: str, message: str | None = None) -> None:
+        self.node_id = node_id
+        self.message = message or f"Node {node_id!r} is not under any file node."
+        super().__init__(self.message)
+
+
 class RunnerError(Exception):
     """Raised when PHP process execution fails.
 

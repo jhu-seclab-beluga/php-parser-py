@@ -3,7 +3,7 @@
 import json
 import logging
 import subprocess
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from static_php_py import PHP
 from static_php_py.exceptions import BinaryNotFoundError, DownloadError
@@ -39,7 +39,7 @@ class Runner:
         try:
             self._php = php if php is not None else PHP.builtin()
             self._php_binary = self._php.path()
-            
+
         except BinaryNotFoundError as e:
             raise RunnerError(
                 f"PHP binary not found: {e}. "
@@ -84,10 +84,10 @@ class Runner:
                 # Log complete error information
                 error_msg = f"PHP execution failed with exit code {result.returncode}"
                 if result.stderr:
-                    logger.error(f"PHP stderr: {result.stderr}")
+                    logger.error("PHP stderr: %s", result.stderr)
                     error_msg += f"\nStderr: {result.stderr}"
                 if result.stdout:
-                    logger.error(f"PHP stdout: {result.stdout}")
+                    logger.error("PHP stdout: %s", result.stdout)
                     error_msg += f"\nStdout: {result.stdout}"
 
                 raise RunnerError(
@@ -139,7 +139,7 @@ class Runner:
                         first_error.get("line"),
                     )
 
-            return result
+            return cast(dict[str, Any], result)
 
         except json.JSONDecodeError as e:
             raise RunnerError(

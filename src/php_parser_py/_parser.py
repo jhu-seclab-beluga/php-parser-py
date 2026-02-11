@@ -60,15 +60,16 @@ class Parser:
             raise
 
         # Normalize to list
-        if not isinstance(json_data, list):
-            json_data = [json_data]
+        node_list: list[dict[str, Any]] = (
+            [json_data] if not isinstance(json_data, list) else json_data
+        )
 
         # Create temporary storage to convert JSON to nodes
         storage = Storage()
-        node_ids = []
+        node_ids: list[str] = []
         node_counter = [1]  # Use list to allow mutation in recursive calls
 
-        for item in json_data:
+        for item in node_list:
             node_id = self._process_node(
                 storage, item, None, None, None, node_counter, ""
             )
@@ -114,12 +115,11 @@ class Parser:
                 raise ParseError("Syntax error in PHP code", line=1) from e
             raise
 
-        # Normalize json_data to list
-        if not isinstance(json_data, list):
-            json_data = [json_data]
-
+        file_list: list[dict[str, Any]] = (
+            [json_data] if not isinstance(json_data, list) else json_data
+        )
         storage = self._create_project_structure(
-            [(file_path, json_data)],
+            [(file_path, file_list)],
             [(file_path, file_hash)],
             project_path=project_path,
         )
@@ -162,7 +162,7 @@ class Parser:
         php_files = [f for f in all_files if f.is_file() and file_filter(f)]
 
         if not php_files:
-            logger.warning(f"No PHP files found in project directory: {project_path}")
+            logger.warning("No PHP files found in project directory: %s", project_path)
             # Create empty project structure
             storage = Storage()
             project_id = "project"
@@ -189,9 +189,10 @@ class Parser:
             code = file_path.read_text(encoding="utf-8")
             try:
                 json_data = self._runner.parse(code)
-                if not isinstance(json_data, list):
-                    json_data = [json_data]
-                all_json_data.append((file_path, json_data))
+                node_list: list[dict[str, Any]] = (
+                    [json_data] if not isinstance(json_data, list) else json_data
+                )
+                all_json_data.append((file_path, node_list))
             except RunnerError as e:
                 if "Syntax error" in str(e):
                     raise ParseError(f"Syntax error in {file_path}", line=1) from e
@@ -234,8 +235,26 @@ class Parser:
             try:
                 relative_path = file_path.relative_to(project_path)
             except ValueError:
-                # If file is not under project_path, use filename
-                relative_path = file_path.name
+                relative_path = Path(file_path.name)
+
+            # Normalize and inspect statements to compute file position range
+            stmt_list: list[dict[str, Any]] = (
+                [json_data] if not isinstance(json_data, list) else json_data
+            )
+            file_end_line = 1
+            file_end_file_pos = 0
+            file_end_token_pos = 0
+            for stmt in stmt_list:
+                attributes = stmt.get("attributes", {})
+                end_line = attributes.get("endLine")
+                if isinstance(end_line, int) and end_line > file_end_line:
+                    file_end_line = end_line
+                end_file_pos = attributes.get("endFilePos")
+                if isinstance(end_file_pos, int) and end_file_pos > file_end_file_pos:
+                    file_end_file_pos = end_file_pos
+                end_token_pos = attributes.get("endTokenPos")
+                if isinstance(end_token_pos, int) and end_token_pos > file_end_token_pos:
+                    file_end_token_pos = end_token_pos
 
             # Create file node (ID: hex hash)
             file_id = file_hash
@@ -245,8 +264,14 @@ class Parser:
                 {
                     "nodeType": "File",
                     "label": "File",
-                    "filePath": str(file_path),  # Absolute path
-                    "path": str(relative_path),  # Relative path from project root
+                    "filePath": str(file_path),
+                    "path": str(relative_path),
+                    "startLine": 1,
+                    "endLine": file_end_line,
+                    "startFilePos": 0,
+                    "endFilePos": file_end_file_pos,
+                    "startTokenPos": 0,
+                    "endTokenPos": file_end_token_pos,
                 },
             )
 
@@ -257,17 +282,31 @@ class Parser:
 
             # Process statements in file (node IDs: {hex}_1, {hex}_2, ...)
             node_counter = [1]
-            if not isinstance(json_data, list):
-                json_data = [json_data]
-
-            for idx, item in enumerate(json_data):
+            for idx, item in enumerate(stmt_list):
                 self._process_node(
                     storage, item, file_id, "stmts", idx, node_counter, file_hash
                 )
 
+        # Project node does not correspond to a concrete source range.
+        # Use sentinel values for all position attributes.
+        storage.set_node_props(
+            project_id,
+            {
+                "nodeType": "Project",
+                "label": "Project",
+                "path": str(project_path),
+                "startLine": -1,
+                "endLine": -1,
+                "startFilePos": -1,
+                "endFilePos": -1,
+                "startTokenPos": -1,
+                "endTokenPos": -1,
+            },
+        )
+
         return storage
 
-    def _process_node(  # pylint: disable=too-many-arguments,too-many-locals,too-many-branches
+    def _process_node(
         self,
         storage: Storage,
         node_data: Any,
@@ -340,7 +379,7 @@ class Parser:
 
         # Create edge from parent if applicable
         if parent_id is not None and field_name is not None:
-            edge_props = {"field": field_name}
+            edge_props: dict[str, str | int] = {"field": field_name}
             if index is not None:
                 edge_props["index"] = index
             edge_id = (parent_id, node_id, "PARENT_OF")
@@ -349,20 +388,18 @@ class Parser:
                 storage.set_edge_props(edge_id, edge_props)
 
         # Process child fields recursively
-        for field_name, field_value in child_fields:
-            if isinstance(field_value, list):
-                # Array of child objects
-                for idx, item in enumerate(field_value):
+        for child_key, child_value in child_fields:
+            if isinstance(child_value, list):
+                for idx, item in enumerate(child_value):
                     self._process_node(
-                        storage, item, node_id, field_name, idx, node_counter, prefix
+                        storage, item, node_id, child_key, idx, node_counter, prefix
                     )
             else:
-                # Single child object
                 self._process_node(
                     storage,
-                    field_value,
+                    child_value,
                     node_id,
-                    field_name,
+                    child_key,
                     None,
                     node_counter,
                     prefix,

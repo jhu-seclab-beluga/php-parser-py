@@ -12,7 +12,7 @@ from typing import Optional
 
 # Global lock for thread-safe extraction
 _extraction_lock = threading.Lock()
-_extraction_done = False  # pylint: disable=invalid-name
+_extraction_state: dict[str, bool] = {"done": False}
 
 
 def get_vendor_path() -> Path:
@@ -55,7 +55,7 @@ def is_already_extracted(zip_path: Path) -> bool:
         stored_hash = marker_file.read_text().strip()
         current_hash = calculate_zip_hash(zip_path)
         return stored_hash == current_hash
-    except Exception:
+    except OSError:
         # If we can't read the marker or calculate hash, re-extract
         return False
 
@@ -95,10 +95,7 @@ def ensure_php_parser_extracted() -> Path:
         FileNotFoundError: If the php-parser zip file is not found
         RuntimeError: If extraction fails
     """
-    global _extraction_done
-
-    # Fast path: already extracted in this process
-    if _extraction_done:
+    if _extraction_state["done"]:
         return get_vendor_path()
 
     vendor_path = get_vendor_path()
@@ -114,25 +111,21 @@ def ensure_php_parser_extracted() -> Path:
 
     zip_path = zip_files[0]
 
-    # Check if already extracted (with marker file)
     if is_already_extracted(zip_path):
-        _extraction_done = True
+        _extraction_state["done"] = True
         return vendor_path
 
-    # Thread-safe extraction
     with _extraction_lock:
-        # Double-check after acquiring lock (another thread might have extracted)
         if is_already_extracted(zip_path):
-            _extraction_done = True
+            _extraction_state["done"] = True
             return vendor_path
 
         try:
-            # Extract PHP-Parser
             extract_php_parser(zip_path, vendor_path)
-            _extraction_done = True
+            _extraction_state["done"] = True
             return vendor_path
 
-        except Exception as e:
+        except (OSError, zipfile.BadZipFile, ValueError) as e:
             raise RuntimeError(
                 f"Failed to extract PHP-Parser from {zip_path}: {e}"
             ) from e

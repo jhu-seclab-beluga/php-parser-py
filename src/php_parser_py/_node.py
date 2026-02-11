@@ -49,19 +49,21 @@ class Node(AbcNodeQuerier):
         return self._nid
 
     @property
-    def node_type(self) -> str | None:
+    def node_type(self) -> str:
         """Return the node type from PHP-Parser.
 
-        Returns the `nodeType` field from the stored JSON, which contains
-        the PHP-Parser class name (e.g., "Stmt_Function", "Expr_Variable").
+        Returns the `nodeType` field from the stored JSON (e.g. "Stmt_Function").
 
         Returns:
-            Node type string or None if not set.
+            Node type string.
         """
-        return self.get_property("nodeType")
+        value = self.get_property("nodeType")
+        if isinstance(value, str):
+            return value
+        raise TypeError(f"Invalid nodeType for node {self._nid}: {value!r}")
 
     @property
-    def all_properties(self) -> dict:
+    def all_properties(self) -> dict[str, Any]:
         """Return all stored properties for this node.
 
         Includes both subnodes (structural properties) and attributes (metadata).
@@ -120,67 +122,100 @@ class Node(AbcNodeQuerier):
     # PHP-Parser standard attributes (metadata properties)
 
     @property
-    def start_line(self) -> int | None:
+    def start_line(self) -> int:
         """Get starting line number.
 
         Returns:
-            Starting line number or None.
+            Starting line number.
         """
-        return self.get_property("startLine")
+        value = self.get_property("startLine")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        raise TypeError(f"Invalid startLine for node {self._nid}: {value!r}")
 
     @property
-    def end_line(self) -> int | None:
+    def end_line(self) -> int:
         """Get ending line number.
 
         Returns:
-            Ending line number or None.
+            Ending line number.
         """
-        return self.get_property("endLine")
+        value = self.get_property("endLine")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        raise TypeError(f"Invalid endLine for node {self._nid}: {value!r}")
 
     @property
-    def start_file_pos(self) -> int | None:
+    def start_file_pos(self) -> int:
         """Get starting file position (byte offset).
 
         Returns:
-            Starting byte offset or None.
+            Starting byte offset.
         """
-        return self.get_property("startFilePos")
+        value = self.get_property("startFilePos")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        raise TypeError(f"Invalid startFilePos for node {self._nid}: {value!r}")
 
     @property
-    def end_file_pos(self) -> int | None:
+    def end_file_pos(self) -> int:
         """Get ending file position (byte offset).
 
         Returns:
-            Ending byte offset or None.
+            Ending byte offset.
         """
-        return self.get_property("endFilePos")
+        value = self.get_property("endFilePos")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        raise TypeError(f"Invalid endFilePos for node {self._nid}: {value!r}")
 
     @property
-    def start_token_pos(self) -> int | None:
+    def start_token_pos(self) -> int:
         """Get starting token position.
 
         Returns:
-            Starting token index or None.
+            Starting token index.
         """
-        return self.get_property("startTokenPos")
+        value = self.get_property("startTokenPos")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        raise TypeError(f"Invalid startTokenPos for node {self._nid}: {value!r}")
 
     @property
-    def end_token_pos(self) -> int | None:
+    def end_token_pos(self) -> int:
         """Get ending token position.
 
         Returns:
-            Ending token index or None.
+            Ending token index.
         """
-        return self.get_property("endTokenPos")
+        value = self.get_property("endTokenPos")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        raise TypeError(f"Invalid endTokenPos for node {self._nid}: {value!r}")
 
     @property
-    def comments(self) -> list | None:
+    def comments(self) -> list[str]:
         """Get comments associated with this node.
 
         Returns:
-            List of Comment objects or None.
+            List of Comment objects (may be empty).
         """
-        return self.get_property("comments")
+        value = self.get_property("comments")
+        if isinstance(value, list):
+            return value
+        raise TypeError(f"Invalid comments for node {self._nid}: {value!r}")
 
     # Attribute helper methods
 

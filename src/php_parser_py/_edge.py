@@ -6,14 +6,14 @@ from cpg2py import AbcEdgeQuerier, Storage
 
 
 class Edge(AbcEdgeQuerier):
-    """Represents an edge between AST nodes.
+    """Represents an edge between AST nodes with generic property access.
 
-    Extends cpg2py's AbcEdgeQuerier to represent parent-child relationships
-    in the PHP AST. Edges store the relationship type and optional metadata
-    like field names and array indices for ordered children.
-
-    Note: PHP-Parser doesn't have explicit Edge objects. This is our abstraction
-    for representing the graph structure in cpg2py Storage.
+    Extends cpg2py's AbcEdgeQuerier. Edge type is fixed (e.g. "PARENT_OF");
+    other data is stored as arbitrary properties via Storage. For PARENT_OF
+    edges in our PHP AST mapping, we use properties "field" and "index" to
+    represent the PHP-Parser subnode key and array position—access them via
+    edge.get("field"), edge.get("index") or edge["field"], edge["index"];
+    they are not special-cased on this class.
 
     Attributes:
         _storage: cpg2py Storage instance containing edge data.
@@ -39,45 +39,11 @@ class Edge(AbcEdgeQuerier):
 
     @property
     def type(self) -> str:
-        """Return the edge type.
-
-        Returns:
-            Edge type string (e.g., "PARENT_OF").
-        """
+        """Return the edge type (e.g. "PARENT_OF")."""
         return self._edge_id[2]
 
     @property
-    def field(self) -> str | None:
-        """Return the field name for this edge.
-
-        The field name indicates which subnode property this edge represents
-        (e.g., "name", "params", "stmts").
-
-        Returns:
-            Field name string or None.
-        """
-        props = self._storage.get_edge_props(self._edge_id)
-        if props is None:
-            return None
-        return props.get("field")
-
-    @property
-    def index(self) -> int | None:
-        """Return the array index for ordered child relationships.
-
-        For edges representing array elements in PHP-Parser JSON, this property
-        contains the index position to maintain ordering.
-
-        Returns:
-            Integer index or None if not an array element.
-        """
-        props = self._storage.get_edge_props(self._edge_id)
-        if props is None:
-            return None
-        return props.get("index")
-
-    @property
-    def all_properties(self) -> dict:
+    def all_properties(self) -> dict[str, Any]:
         """Return all edge properties.
 
         Returns:

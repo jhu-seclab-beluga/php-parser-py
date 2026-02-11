@@ -5,11 +5,8 @@ This package provides a Python interface to PHP-Parser, enabling AST parsing
 and manipulation of PHP code.
 """
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pathlib import Path
-    from typing import Callable
+from pathlib import Path
+from typing import Callable
 
 from php_parser_py._parser import Parser as _Parser
 from php_parser_py._printer import PrettyPrinter as _PrettyPrinter
@@ -21,7 +18,7 @@ ensure_php_parser_extracted()
 # Import and expose public classes directly
 from php_parser_py._ast import AST
 from php_parser_py._edge import Edge
-from php_parser_py._exceptions import ParseError, RunnerError
+from php_parser_py._exceptions import NodeNotInFileError, ParseError, RunnerError
 from php_parser_py._node import Node
 
 
@@ -79,9 +76,13 @@ def parse_file(path: str) -> AST:
     return parser.parse_file(path)
 
 
+def _default_file_filter(path: Path) -> bool:
+    return path.suffix == ".php"
+
+
 def parse_project(
     project_path: str,
-    file_filter: "Callable[[Path], bool]" = lambda p: p.suffix == ".php",  # type: ignore
+    file_filter: Callable[[Path], bool] | None = None,
 ) -> AST:
     """Parse all PHP files in a project directory into an AST.
 
@@ -101,6 +102,8 @@ def parse_project(
         FileNotFoundError: If project directory does not exist.
         ValueError: If project_path is not a directory.
     """
+    if file_filter is None:
+        file_filter = _default_file_filter
     parser = Parser()
     return parser.parse_project(project_path, file_filter=file_filter)
 
@@ -114,6 +117,7 @@ __all__ = [
     "PrettyPrinter",
     "ParseError",
     "RunnerError",
+    "NodeNotInFileError",
     "parse_code",
     "parse_file",
     "parse_project",
