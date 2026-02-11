@@ -104,7 +104,6 @@ class TestAST:
             ast = parser.parse_file(temp_file)
 
             project = ast.project_node()
-            assert project is not None
             assert project.get_property("nodeType") == "Project"
             assert project.get_property("path") is not None
         finally:
@@ -157,12 +156,13 @@ class TestAST:
             assert func_node is not None
 
             # Get file containing this node
-            file_node = ast.get_file(func_node.id)
-            assert file_node is not None
+            file_node = ast.get_file_node(func_node.id)
             assert file_node.get_property("nodeType") == "File"
 
-            # Project node should return None
-            project_file = ast.get_file("project")
-            assert project_file is None
+            # Project node is not under any file → NodeNotInFileError
+            from php_parser_py import NodeNotInFileError
+
+            with pytest.raises(NodeNotInFileError):
+                ast.get_file_node("project")
         finally:
             os.unlink(temp_file)

@@ -105,7 +105,6 @@ class TestParser:
 
             # Check project node has path property
             project = ast.project_node()
-            assert project is not None
             project_path = project.get_property("path")
             assert project_path is not None
             # Use resolve() to handle symlinks (e.g., /var -> /private/var on macOS)
@@ -151,7 +150,6 @@ class TestParser:
 
             # Check project node has path property
             project = ast.project_node()
-            assert project is not None
             project_path = project.get_property("path")
             assert project_path is not None
             assert project_path == str(project_root.resolve())
@@ -197,7 +195,6 @@ class TestParser:
 
             # Check project node has correct path
             project = ast.project_node()
-            assert project is not None
             project_path = project.get_property("path")
             assert project_path == str(project_root.resolve())
 

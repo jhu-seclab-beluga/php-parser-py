@@ -19,15 +19,15 @@ class TestEdge:
         edge = Edge(storage_with_edge, "node1", "node2", "PARENT_OF")
         assert edge.edge_type == "PARENT_OF"
 
-    def test_edge_field_property(self, storage_with_edge):
-        """Test field property."""
+    def test_edge_field_via_get(self, storage_with_edge):
+        """Test 'field' as generic edge property (PARENT_OF mapping)."""
         edge = Edge(storage_with_edge, "node1", "node2", "PARENT_OF")
-        assert edge.field == "stmts"
+        assert edge.get("field") == "stmts"
 
-    def test_edge_index_property(self, storage_with_edge):
-        """Test index property."""
+    def test_edge_index_via_get(self, storage_with_edge):
+        """Test 'index' as generic edge property (PARENT_OF mapping)."""
         edge = Edge(storage_with_edge, "node1", "node2", "PARENT_OF")
-        assert edge.index == 0
+        assert edge.get("index") == 0
 
     def test_all_properties(self, storage_with_edge):
         """Test all_properties returns complete dict."""
@@ -82,6 +82,6 @@ class TestEdge:
         assert edge.from_nid == "node1"
         assert edge.to_nid == "node2"
         assert edge.edge_type == "PARENT_OF"
-        assert edge.field is None
-        assert edge.index is None
+        assert edge.get("field") is None
+        assert edge.get("index") is None
         assert edge.all_properties == {}
