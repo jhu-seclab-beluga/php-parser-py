@@ -64,11 +64,26 @@
   - `comments` → `list[Any]`: List of Comment objects (may be empty)
   - **Note**: String values representing integers (e.g. `"123"`) are automatically converted to int
 
+- **File Path Properties** (public API):
+  - `relative_path` → `str | None`: Relative path of the file containing this node
+    - For File/Project nodes: returns their own `relativePath` property
+    - For statement nodes: resolves via ID prefix convention (file_hash_N pattern)
+    - Returns `None` if not available or node doesn't follow convention
+  - `absolute_path` → `str | None`: Absolute path of the file containing this node
+    - For File/Project nodes: returns their own `absolutePath` property
+    - For statement nodes: resolves via ID prefix convention
+    - Returns `None` if not available or node doesn't follow convention
+  - **Implementation Note**: Uses simple ID prefix lookup (O(1)), not complex edge traversal
+
 - **Example Usage**:
 ```python
 # Query by node type (using node_type property)
 node = graph.first_node(lambda n: n.node_type == "Stmt_Function")
 line = node.start_line  # Returns int (no None possible)
+
+# Get file path information
+rel_path = node.relative_path  # Returns "src/file.php" or None
+abs_path = node.absolute_path  # Returns "/project/src/file.php" or None
 
 # Position info always available on all nodes
 if node.start_line >= 0:  # Check if from real source (not Project/File)
@@ -76,6 +91,11 @@ if node.start_line >= 0:  # Check if from real source (not Project/File)
 
 # Dynamic property access for PHP-Parser fields
 name_prop = node.get_property("name")  # Returns Identifier node or dict
+
+# File nodes have their own path information
+file_node = graph.file_nodes()[0]
+print(file_node.relative_path)  # "src/file.php"
+print(file_node.absolute_path)  # "/project/src/file.php"
 ```
 
 ---

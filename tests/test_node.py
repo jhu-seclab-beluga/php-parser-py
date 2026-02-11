@@ -101,3 +101,112 @@ class TestNode:
         node = Node(storage_with_node, "test_node_1")
         assert node.get_attribute("name") == "testFunction"
         assert node.get_attribute("nonexistent", "default") == "default"
+
+    def test_relative_path_for_file_node(self):
+        """Test relative_path property for File node."""
+        storage = Storage()
+        storage.add_node("file_abc123")
+        storage.set_node_props(
+            "file_abc123",
+            {
+                "nodeType": "File",
+                "relativePath": "src/index.php",
+                "absolutePath": "/home/user/project/src/index.php",
+            },
+        )
+        node = Node(storage, "file_abc123")
+        assert node.relative_path == "src/index.php"
+
+    def test_absolute_path_for_file_node(self):
+        """Test absolute_path property for File node."""
+        storage = Storage()
+        storage.add_node("file_abc123")
+        storage.set_node_props(
+            "file_abc123",
+            {
+                "nodeType": "File",
+                "relativePath": "src/index.php",
+                "absolutePath": "/home/user/project/src/index.php",
+            },
+        )
+        node = Node(storage, "file_abc123")
+        assert node.absolute_path == "/home/user/project/src/index.php"
+
+    def test_relative_path_for_project_node(self):
+        """Test relative_path property for Project node."""
+        storage = Storage()
+        storage.add_node("project")
+        storage.set_node_props(
+            "project",
+            {
+                "nodeType": "Project",
+                "absolutePath": "/home/user/project",
+                "startLine": -1,
+                "endLine": -1,
+            },
+        )
+        node = Node(storage, "project")
+        # Project nodes may not have relativePath
+        assert node.relative_path is None
+
+    def test_absolute_path_for_project_node(self):
+        """Test absolute_path property for Project node."""
+        storage = Storage()
+        storage.add_node("project")
+        storage.set_node_props(
+            "project",
+            {
+                "nodeType": "Project",
+                "absolutePath": "/home/user/project",
+                "startLine": -1,
+                "endLine": -1,
+            },
+        )
+        node = Node(storage, "project")
+        assert node.absolute_path == "/home/user/project"
+
+    def test_relative_path_for_child_node_via_prefix(self):
+        """Test relative_path for a statement node using ID prefix convention."""
+        storage = Storage()
+        # Create a file node
+        storage.add_node("file_abc123")
+        storage.set_node_props(
+            "file_abc123",
+            {
+                "nodeType": "File",
+                "relativePath": "test.php",
+                "absolutePath": "/home/user/test.php",
+            },
+        )
+        # Create a statement node with file hash prefix
+        storage.add_node("file_abc123_1")
+        storage.set_node_props(
+            "file_abc123_1",
+            {"nodeType": "Stmt_Function", "startLine": 5, "endLine": 10},
+        )
+
+        node = Node(storage, "file_abc123_1")
+        assert node.relative_path == "test.php"
+        assert node.absolute_path == "/home/user/test.php"
+
+    def test_path_properties_return_none_for_node_without_file_prefix(self):
+        """Test that path properties return None for nodes without ID prefix convention."""
+        storage = Storage()
+        # Create a node without the file_hash_N pattern
+        storage.add_node("orphan_node")
+        storage.set_node_props("orphan_node", {"nodeType": "Stmt_Function"})
+
+        node = Node(storage, "orphan_node")
+        # Should return None because node ID doesn't follow prefix convention
+        assert node.relative_path is None
+        assert node.absolute_path is None
+
+    def test_path_properties_return_none_for_orphan_node(self):
+        """Test that path properties return None for nodes without file context."""
+        storage = Storage()
+        storage.add_node("orphan")
+        storage.set_node_props("orphan", {"nodeType": "Stmt_Function"})
+
+        node = Node(storage, "orphan")
+        assert node.relative_path is None
+        assert node.absolute_path is None

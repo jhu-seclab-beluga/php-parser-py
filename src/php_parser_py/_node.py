@@ -217,7 +217,77 @@ class Node(AbcNodeQuerier):
             return value
         raise TypeError(f"Invalid comments for node {self._nid}: {value!r}")
 
-    # Attribute helper methods
+    @property
+    def relative_path(self) -> str | None:
+        """Get the relative path of the file containing this node.
+
+        For File or Project nodes: returns their own relativePath property if set.
+        For other nodes: resolves the containing File node and returns its relativePath.
+
+        Returns:
+            Relative path string, or None if not available.
+        """
+        # If this node is a File or Project, get its own relativePath
+        if self.node_type in ("File", "Project"):
+            value = self.get_property("relativePath")
+            return value if isinstance(value, str) else None
+
+        # For other nodes, try to get from containing file via ID prefix convention
+        return self._get_file_property("relativePath")
+
+    @property
+    def absolute_path(self) -> str | None:
+        """Get the absolute path of the file containing this node.
+
+        For File or Project nodes: returns their own absolutePath property if set.
+        For other nodes: resolves the containing File node and returns its absolutePath.
+
+        Returns:
+            Absolute path string, or None if not available.
+        """
+        # If this node is a File or Project, get its own absolutePath
+        if self.node_type in ("File", "Project"):
+            value = self.get_property("absolutePath")
+            return value if isinstance(value, str) else None
+
+        # For other nodes, try to get from containing file via ID prefix convention
+        return self._get_file_property("absolutePath")
+
+    def _get_file_property(self, prop_name: str) -> str | None:
+        """Get a path property from the containing file node via ID prefix convention.
+
+        Node IDs follow the pattern: file_hash_1, file_hash_2, etc.
+        This method extracts the file_hash prefix and retrieves the property from that file node.
+
+        Args:
+            prop_name: Property name to retrieve ("relativePath" or "absolutePath").
+
+        Returns:
+            Property value from the file node, or None if not found.
+        """
+        if "_" not in self._nid:
+            return None
+
+        # Extract prefix: everything before the last underscore followed by digits
+        last_underscore = self._nid.rfind("_")
+        if last_underscore == -1:
+            return None
+
+        potential_index = self._nid[last_underscore + 1 :]
+        if not potential_index.isdigit():
+            return None
+
+        # Get the file node with ID = prefix
+        file_id = self._nid[:last_underscore]
+        if not self._storage.contains_node(file_id):
+            return None
+
+        file_props = self._storage.get_node_props(file_id)
+        if not file_props or file_props.get("nodeType") != "File":
+            return None
+
+        value = file_props.get(prop_name)
+        return value if isinstance(value, str) else None
 
     def has_attribute(self, name: str) -> bool:
         """Check if attribute exists.
