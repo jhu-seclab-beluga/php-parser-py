@@ -19,7 +19,7 @@ All traversal methods support **Flow Style** programming (functional predicates)
 | `ast.first_node(pred)`| Find first node where `pred(node)` is True | `Node` \| `None` |
 | `ast.succ(n)` | Get **children** (outgoing edges) | `Generator[Node]` |
 | `ast.prev(n)` | Get **parents** (incoming edges) | `Generator[Node]` |
-| `ast.node(id)` | Get single node by ID | `Node` \| `None` |
+| `ast.node(id)` | Get single node by ID (raises `KeyError` if missing) | `Node` |
 
 ## Property Management
 
@@ -79,7 +79,7 @@ params = (c for c in children if c.node_type == "Param")
 children = ast.succ(node)
 
 # 2. Define Filter
-is_name_field = lambda c: ast.edge(node.id, c.id, "PARENT_OF").field == "name"
+is_name_field = lambda c: ast.edge(node.id, c.id, "PARENT_OF").get("field") == "name"
 
 # 3. Filter children
 name_nodes = (c for c in children if is_name_field(c))
@@ -96,13 +96,13 @@ For fields like `stmts`, `params`, `args`.
 children = ast.succ(node)
 
 # 2. Define Filter
-is_stmt_field = lambda c: ast.edge(node.id, c.id, "PARENT_OF").field == "stmts"
+is_stmt_field = lambda c: ast.edge(node.id, c.id, "PARENT_OF").get("field") == "stmts"
 
 # 3. Filter children
 stmts_nodes = [c for c in children if is_stmt_field(c)]
 
-# 4. Sort by edge index
-get_index = lambda c: ast.edge(node.id, c.id, "PARENT_OF").index or 0
+# 4. Sort by edge index (edge property "index" is None when not an array element)
+get_index = lambda c: (e := ast.edge(node.id, c.id, "PARENT_OF")).get("index") if e.get("index") is not None else 999
 stmts = sorted(stmts_nodes, key=get_index)
 ```
 

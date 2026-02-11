@@ -14,7 +14,7 @@
 
 **Inherited from cpg2py**: `AbcNodeQuerier`, `AbcEdgeQuerier`, `AbcGraphQuerier`, `Storage`
 
-**Exceptions**: `ParseError`, `PHPRunnerError`
+**Exceptions**: `ParseError`, `RunnerError`, `NodeNotInFileError`
 
 **Design Principle**: Maximize delegation to PHP-Parser. No hardcoded node types. All AST operations use PHP-Parser's native JSON format.
 
@@ -37,14 +37,13 @@
   - **Behavior**: Returns the node identifier
   - **Output**: Node ID string
 
-- **[@property label -> str | None]**
-  - **Behavior**: Returns `nodeType` from stored JSON (e.g., "Stmt_Function", "Expr_Variable")
-  - **Output**: Node type string or None
-  - **Note**: This is the PHP-Parser class name, not hardcoded in Python
+- **[@property node_type -> str | None]** (public API; design alias: label)
+  - **Behavior**: Returns `nodeType` from stored JSON (e.g. "Stmt_Function")
+  - **Output**: Node type string or None if not set
 
-- **[@property properties -> dict | None]**
+- **[@property all_properties -> dict]**
   - **Behavior**: Returns all stored properties (the complete JSON object for this node)
-  - **Output**: Dictionary of all properties
+  - **Output**: Dictionary (empty dict if no properties; see implementation)
 
 - **[get_property(*prop_names: str) -> Any | None]** (inherited)
   - **Behavior**: Returns first non-None property value from given names
@@ -74,12 +73,10 @@ line = node.get_property("startLine", "lineno")  # Try multiple names
   - `to_nid: str` - Target node ID
 
 - **[@property type -> str]**
-  - **Behavior**: Returns edge type (e.g., "PARENT_OF")
+  - **Behavior**: Returns edge type (e.g. "PARENT_OF")
   - **Output**: Edge type string
 
-- **[@property index -> int | None]**
-  - **Behavior**: Returns array index for ordered child relationships
-  - **Output**: Integer index or None
+- **Edge properties (generic)**: No dedicated `.field` / `.index`; all metadata is via property API. For PARENT_OF edges in our PHP AST mapping, we store `field` (subnode key, e.g. "name", "params") and `index` (array position) as normal properties—use `edge.get("field")`, `edge.get("index")`, or `edge["field"]`, `edge["index"]`.
 
 ---
 
@@ -94,39 +91,37 @@ line = node.get_property("startLine", "lineno")  # Try multiple names
   - **Input**: cpg2py Storage containing AST nodes and edges, optional root node ID
   - **Note**: For project structures, root_node_id is typically `"project"`
 
-- **[node(whose_id_is: str) -> PHPASTNode | None]** (implements abstract)
+- **[node(whose_id_is: str) -> PHPASTNode]**
   - **Behavior**: Returns node wrapper by ID
-  - **Input**: Node ID string
-  - **Output**: PHPASTNode instance or None
+  - **Raises**: `KeyError` if node ID is not in the graph (no None)
+  - **Output**: PHPASTNode instance
 
-- **[edge(fid: str, tid: str, eid: str) -> PHPASTEdge | None]** (implements abstract)
+- **[edge(fid: str, tid: str, eid: str) -> PHPASTEdge]**
   - **Behavior**: Returns edge wrapper by ID tuple
-  - **Input**: From ID, To ID, Edge type
-  - **Output**: PHPASTEdge instance or None
+  - **Raises**: `KeyError` if edge is not in the graph (no None)
+  - **Output**: PHPASTEdge instance
 
-
-- **[project_node() -> PHPASTNode | None]**
-  - **Behavior**: Alias for root_node, returns project node
-  - **Output**: Project Node instance or None
+- **[project_node() -> PHPASTNode]**
+  - **Behavior**: Returns the project (root) node
+  - **Raises**: `KeyError` if root node is not in the graph (no None)
+  - **Output**: Project Node instance
 
 - **[file_nodes() -> list[PHPASTNode]]**
   - **Behavior**: Returns all file nodes in the project
-  - **Output**: List of File Node instances, sorted by file path
-  - **Note**: Only works for ASTs with project structure (created via parse_file or parse_project)
+  - **Output**: List of File Node instances, sorted by file path; empty list if no project structure
 
-- **[get_file(node_id: str) -> PHPASTNode | None]**
-  - **Behavior**: Gets the file node containing the given node by traversing upward via PARENT_OF edges
-  - **Input**: Node ID string
-  - **Output**: File Node instance containing the node, or None if:
-    - Node ID doesn't exist
-    - Node is the project node (project doesn't belong to a file)
-    - Node is not under any file node
+- **[get_file(node_id: str) -> PHPASTNode]**
+  - **Behavior**: Returns the file node containing the given node. Uses the AST ID convention (file node ID = file hash; nodes inside file = `file_hash + "_" + increment`) for a direct lookup when applicable, then falls back to `ancestors(node)` to find the first File ancestor.
+  - **Raises**: `KeyError` if node ID is not in the graph; `NodeNotInFileError` if the node is not under any file (e.g. project node)
+  - **Output**: File Node instance (never None)
   - **Note**: If the node itself is a File node, returns it
 
 - **[to_json() -> str]**
   - **Behavior**: Reconstructs PHP-Parser JSON from Storage for code generation
   - **Output**: JSON string compatible with PHP-Parser's JsonDecoder
   - **Note**: Traverses PARENT_OF edges to rebuild nested structure, excludes virtual project/file nodes for PrettyPrinter compatibility
+
+- **Graph API (no direct Storage)**: Implementation uses only the graph API where possible: `nodes()`, `edges()`, `node()`, `edge()`, `succ()`, `prev()`, `ancestors()`, `descendants()`. Storage is used only in `node()` and `edge()` for existence checks and for constructing Node/Edge wrappers (per cpg2py usage).
 
 - **Inherited Traversal Methods** (from AbcGraphQuerier):
   - `nodes(predicate)` → iterate all nodes matching condition
@@ -140,12 +135,12 @@ line = node.get_property("startLine", "lineno")  # Try multiple names
 - **Example Usage**:
 ```python
 # Query by node type (from PHP-Parser JSON, not hardcoded)
-for func in graph.nodes(lambda n: n.label == "Stmt_Function"):
+for func in graph.nodes(lambda n: n.node_type == "Stmt_Function"):
     print(func.get_property("name"))
 
-# Traverse children
-for child in graph.children(some_node):
-    print(child.label)
+# Traverse children (succ = children via PARENT_OF)
+for child in graph.succ(some_node):
+    print(child.node_type)
 
 # Reconstruct JSON for printing
 json_str = graph.to_json()
@@ -242,7 +237,7 @@ json_str = graph.to_json()
     - Keys: File paths (from file node's `filePath` property) or file hash if path unavailable
     - Values: Generated PHP source code for that file
     - If AST has no file structure, returns single entry with key `""` (empty string)
-  - **Raises**: `PHPRunnerError` if PHP-Parser fails
+  - **Raises**: `RunnerError` if PHP-Parser fails
   - **Note**: Each file is processed separately, allowing independent code generation
   - **PHP Script Used**:
     ```php
@@ -277,7 +272,7 @@ json_str = graph.to_json()
   - **Behavior**: Executes PHP script with stdin input, returns stdout
   - **Input**: PHP script content, stdin data
   - **Output**: stdout content
-  - **Raises**: `PHPRunnerError` if non-zero exit code
+  - **Raises**: `RunnerError` if non-zero exit code
 
 - **[parse(code: str) -> dict]**
   - **Behavior**: Invokes PHP-Parser parse + JsonSerializer
@@ -289,7 +284,7 @@ json_str = graph.to_json()
   - **Behavior**: Invokes PHP-Parser JsonDecoder + PrettyPrinter
   - **Input**: AST JSON string
   - **Output**: PHP source code
-  - **Raises**: `PHPRunnerError` if fails
+  - **Raises**: `RunnerError` if fails
 
 ---
 
@@ -353,18 +348,15 @@ The library supports three parsing modes with different AST structures:
 
 ### 2. File Parsing (`parse_file`)
 - **Structure**: Project → File → Statements
-- **Node IDs**:
+- **ID convention** (used by `get_file` and traversal):
   - Project: `"project"` (fixed)
-  - File: 8-character hex hash (e.g., `"a1b2c3d4"`)
-  - Statements: `{hex}_1`, `{hex}_2`, `{hex}_3`, ...
+  - File node: **file_hash** (e.g. 8-character hex `"a1b2c3d4"`)
+  - Nodes inside that file: **file_hash + "_" + increment** (e.g. `"a1b2c3d4_1"`, `"a1b2c3d4_2"`)
 - **Use Case**: Single file analysis with file context
 
 ### 3. Project Parsing (`parse_project`)
 - **Structure**: Project → Multiple Files → Statements
-- **Node IDs**:
-  - Project: `"project"` (fixed)
-  - Files: Unique 8-character hex hash per file
-  - Statements: `{hex}_1`, `{hex}_2`, ... (prefixed with file hash)
+- **ID convention**: Same as file parsing per file; each file has its own file_hash; statements under it are `{that_file_hash}_1`, `{that_file_hash}_2`, ...
 - **Use Case**: Multi-file project analysis
 
 ## JSON-to-Storage Mapping
@@ -445,8 +437,13 @@ For code generation, Storage is converted back to PHP-Parser's exact JSON format
 - Properties: `message: str`, `line: int | None`
 - Source: Extracted from PHP-Parser's error output
 
-**PHPRunnerError**: Raised when PHP process execution fails.
+**RunnerError**: Raised when PHP process execution fails.
 - Properties: `message: str`, `stderr: str`, `exit_code: int`
+
+**NodeNotInFileError**: Raised when a node has no containing file (e.g. project node or orphan).
+- Raised by: `get_file(node_id)` when the node is not under any file node
+- Properties: `node_id: str`, `message: str`
+- Use: Avoids returning None from `get_file`; callers handle "not in a file" via exception
 
 ---
 
@@ -461,7 +458,7 @@ php_parser_py/
 ├── parser.py                # Parser class with JSON-to-Storage mapping
 ├── printer.py               # PrettyPrinter class with Storage-to-JSON
 ├── runner.py                # PHPRunner class for PHP-Parser invocation
-├── exceptions.py            # ParseError, PHPRunnerError
+├── exceptions.py            # ParseError, RunnerError, NodeNotInFileError
 └── scripts/
     ├── parse.php            # PHP script for parsing
     └── print.php            # PHP script for code generation
