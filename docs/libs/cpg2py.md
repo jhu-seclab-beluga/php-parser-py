@@ -4,14 +4,17 @@
 
 ## Core Concepts
 
-php-parser-py uses `cpg2py` for AST storage and traversal.
+php-parser-py uses `cpg2py` for AST storage and querying.
 - **Node**: A JSON object from PHP-Parser (extends `AbcNodeQuerier`).
 - **Edge**: `PARENT_OF` relationship (extends `AbcEdgeQuerier`).
-- **Storage**: Underlying graph database.
 
-## Traversal Methods
+> [!CAUTION]
+> **Do NOT use direct storage interfaces** (e.g., `ast._storage`, `storage.add_node`, `storage.set_node_prop`, `storage.add_edge`).
+> Always use the high-level API methods described below. Direct storage access is an implementation detail and may change without notice.
 
-All traversal methods support **Flow Style** programming (functional predicates) and return **Generators** for lazy evaluation.
+## Querying Methods
+
+All querying methods support **Flow Style** programming (functional predicates) and return **Generators** for lazy evaluation.
 
 | Method | Description | Return Type |
 |--------|-------------|-------------|
@@ -23,7 +26,7 @@ All traversal methods support **Flow Style** programming (functional predicates)
 
 ## Property Management
 
-Modify node attributes dynamically.
+Use `set_property` / `set_properties` to modify node attributes. **Never** write to storage directly.
 
 | Method | Usage | Description |
 |--------|-------|-------------|
@@ -31,21 +34,15 @@ Modify node attributes dynamically.
 | `set_properties` | `node.set_properties({"a": 1, "b": 2})` | Set multiple properties |
 | `get_property` | `node.get_property("key", default)` | Get with fallback |
 
-## Graph Modification
-
-Modify the underlying graph structure via `storage`.
-
-```python
-# Access storage from AST or Node
-storage = ast._storage 
-
-# Add Node
-storage.add_node("new_node_id")
-storage.set_node_prop("new_node_id", "nodeType", "Stmt_Break")
-
-# Add Edge: (from_id, to_id, edge_type)
-storage.add_edge(("parent_id", "new_node_id", "PARENT_OF"))
-```
+> [!IMPORTANT]
+> Always use `node.set_property(key, value)` or `node.set_properties(dict)` to update node values.
+> For structural changes (adding/removing nodes and edges), use the `Modifier` class:
+> ```python
+> from php_parser_py import Modifier
+> modifier = Modifier(ast)
+> new_node = modifier.add_node("new_id", "Stmt_Break")
+> modifier.add_edge("parent_id", "new_id", field="stmts", index=0)
+> ```
 
 ## Flow Style Patterns (Recommended)
 
@@ -104,6 +101,19 @@ stmts_nodes = [c for c in children if is_stmt_field(c)]
 # 4. Sort by edge index (edge property "index" is None when not an array element)
 get_index = lambda c: (e := ast.edge(node.id, c.id, "PARENT_OF")).get("index") if e.get("index") is not None else 999
 stmts = sorted(stmts_nodes, key=get_index)
+```
+
+### 5. Setting Node Values
+
+```python
+# Set a single property
+node.set_property("analyzed", True)
+
+# Set multiple properties at once
+node.set_properties({"status": "complete", "confidence": 0.95})
+
+# Read back
+status = node.get_property("status", "unknown")
 ```
 
 ## Project Structure
