@@ -3,15 +3,16 @@
 import hashlib
 import logging
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from cpg2py import Storage
 from static_php_py import PHP
 
-from php_parser_py._ast import AST
-from php_parser_py._exceptions import ParseError, RunnerError
-from php_parser_py._node import Node
-from php_parser_py._runner import Runner
+from ._ast import AST
+from ._exceptions import ParseError, RunnerError
+from ._modifier import Modifier
+from ._node import Node
+from ._runner import Runner
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +20,8 @@ logger = logging.getLogger(__name__)
 class Parser:
     """Parses PHP source code using PHP-Parser.
 
-    Provides three parsing methods:
-    - parse_code: Parse code string, returns list of top-level statement nodes
-    - parse_file: Parse single file, returns AST with project and file nodes
-    - parse_project: Parse project directory, returns AST with project and all PHP files
+    Uses Modifier for all AST construction. Parser never calls Storage
+    directly — all node/edge creation goes through Modifier.
 
     Attributes:
         _runner: Runner instance for PHP-Parser invocation.
@@ -52,39 +51,27 @@ class Parser:
             ParseError: If code has syntax errors.
             RunnerError: If PHP execution fails.
         """
-        try:
-            json_data = self._runner.parse(code)
-        except RunnerError as e:
-            if "Syntax error" in str(e):
-                raise ParseError("Syntax error in PHP code", line=1) from e
-            raise
+        json_data = self._parse_php(code)
+        node_list = self._normalize_json(json_data)
 
-        # Normalize to list
-        node_list: list[dict[str, Any]] = (
-            [json_data] if not isinstance(json_data, list) else json_data
-        )
-
-        # Create temporary storage to convert JSON to nodes
-        storage = Storage()
+        modifier = Modifier(AST(Storage(), root_node_id="__code_root__"))
+        node_counter = [1]
         node_ids: list[str] = []
-        node_counter = [1]  # Use list to allow mutation in recursive calls
 
         for item in node_list:
             node_id = self._process_node(
-                storage, item, None, None, None, node_counter, ""
+                modifier, item, None, None, None, node_counter, ""
             )
             if node_id:
                 node_ids.append(node_id)
 
-        # Return Node instances
-        return [Node(storage, nid) for nid in node_ids]
+        return [modifier.ast.node(nid) for nid in node_ids]
 
     def parse_file(self, path: str) -> AST:
         """Parse a single PHP file into an AST with project and file nodes.
 
-        Creates a project node (ID: "project") and a file node (ID: hex hash of path).
-        File node contains all statements from the file.
-        Project path is set to the file's directory.
+        Creates a project node (ID: "project") and a file node (ID: hex
+        hash of path). File node contains all statements from the file.
 
         Args:
             path: File path string.
@@ -100,30 +87,18 @@ class Parser:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
 
-        # Project path is the file's directory
         project_path = file_path.parent
-
-        # Generate file hash (hex)
         file_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
-
         code = file_path.read_text(encoding="utf-8")
+        json_data = self._parse_php(code)
+        file_list = self._normalize_json(json_data)
 
-        try:
-            json_data = self._runner.parse(code)
-        except RunnerError as e:
-            if "Syntax error" in str(e):
-                raise ParseError("Syntax error in PHP code", line=1) from e
-            raise
-
-        file_list: list[dict[str, Any]] = (
-            [json_data] if not isinstance(json_data, list) else json_data
-        )
-        storage = self._create_project_structure(
+        modifier = self._build_project_structure(
             [(file_path, file_list)],
             [(file_path, file_hash)],
             project_path=project_path,
         )
-        return AST(storage, root_node_id="project")
+        return modifier.ast
 
     def parse_project(
         self,
@@ -134,12 +109,11 @@ class Parser:
 
         Recursively traverses the project directory to find all PHP files,
         then parses them into a single AST with project and file nodes.
-        Each file node has ID based on its path hash.
 
         Args:
             project_path: Project root directory path.
             file_filter: Function to filter files. Takes a Path and returns
-                True if the file should be parsed. Defaults to checking for `.php` suffix.
+                True if the file should be parsed. Defaults to .php suffix.
 
         Returns:
             AST instance with project -> files -> statements hierarchy.
@@ -153,250 +127,245 @@ class Parser:
 
         if not project_path_obj.exists():
             raise FileNotFoundError(f"Project directory not found: {project_path}")
-
         if not project_path_obj.is_dir():
             raise ValueError(f"Project path is not a directory: {project_path}")
 
-        # Find all files recursively and filter
-        all_files = project_path_obj.rglob("*")
-        php_files = [f for f in all_files if f.is_file() and file_filter(f)]
+        php_files = [
+            f for f in project_path_obj.rglob("*") if f.is_file() and file_filter(f)
+        ]
 
         if not php_files:
             logger.warning("No PHP files found in project directory: %s", project_path)
-            # Create empty project structure
-            storage = Storage()
-            project_id = "project"
-            storage.add_node(project_id)
-            storage.set_node_props(
-                project_id,
-                {"nodeType": "Project", "absolutePath": str(project_path)},
-            )
-            return AST(storage, root_node_id="project")
+            return self._build_empty_project(project_path_obj)
 
-        # Prepare file information
-        file_infos = []
-        for file_path in php_files:
-            file_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
-            file_infos.append((file_path, file_hash))
+        file_infos = [
+            (fp, hashlib.md5(str(fp).encode()).hexdigest()[:8]) for fp in php_files
+        ]
 
-        # Parse all files
         all_json_data = []
         for file_path, _ in file_infos:
             code = file_path.read_text(encoding="utf-8")
-            try:
-                json_data = self._runner.parse(code)
-                node_list: list[dict[str, Any]] = (
-                    [json_data] if not isinstance(json_data, list) else json_data
-                )
-                all_json_data.append((file_path, node_list))
-            except RunnerError as e:
-                if "Syntax error" in str(e):
-                    raise ParseError(f"Syntax error in {file_path}", line=1) from e
-                raise
+            json_data = self._parse_php(code, source=str(file_path))
+            all_json_data.append((file_path, self._normalize_json(json_data)))
 
-        storage = self._create_project_structure(
+        modifier = self._build_project_structure(
             all_json_data, file_infos, project_path=project_path_obj
         )
-        return AST(storage, root_node_id="project")
+        return modifier.ast
 
-    def _create_project_structure(
+    # -- Internal helpers --
+
+    def _parse_php(self, code: str, source: str = "input") -> object:
+        # Invoke PHP-Parser and translate RunnerError into ParseError.
+        try:
+            return self._runner.parse(code)
+        except RunnerError as e:
+            if "Syntax error" in str(e):
+                raise ParseError(f"Syntax error in {source}", line=1) from e
+            raise
+
+    @staticmethod
+    def _normalize_json(json_data: object) -> list[dict[str, object]]:
+        # Ensure JSON data is always a list of node dicts.
+        if isinstance(json_data, list):
+            return json_data
+        if isinstance(json_data, dict):
+            return [json_data]
+        return []
+
+    def _build_empty_project(self, project_path: Path) -> AST:
+        # Create a project-only AST with no files.
+        modifier = Modifier(AST(Storage()))
+        modifier.add_node(
+            "project",
+            "Project",
+            absolutePath=str(project_path),
+            startLine=-1,
+            endLine=-1,
+            startFilePos=-1,
+            endFilePos=-1,
+            startTokenPos=-1,
+            endTokenPos=-1,
+        )
+        return modifier.ast
+
+    def _build_project_structure(
         self,
-        files_data: list[tuple[Path, Any]],
+        files_data: list[tuple[Path, list[dict[str, object]]]],
         file_infos: list[tuple[Path, str]],
         project_path: Path,
-    ) -> Storage:
-        """Create AST structure with project -> files -> statements hierarchy.
+    ) -> Modifier:
+        # Build project -> files -> statements hierarchy via Modifier.
+        modifier = Modifier(AST(Storage()))
 
-        Args:
-            files_data: List of (file_path, json_data) tuples.
-            file_infos: List of (file_path, file_hash) tuples.
-            project_path: Project root directory path.
+        modifier.add_node("project", "Project", absolutePath=str(project_path))
 
-        Returns:
-            Storage instance with complete project structure.
-        """
-        storage = Storage()
-
-        # Create project node (fixed ID: "project")
-        project_id = "project"
-        storage.add_node(project_id)
-        storage.set_node_props(
-            project_id,
-            {"nodeType": "Project", "absolutePath": str(project_path)},
-        )
-
-        # Create file nodes and process their statements
         for (file_path, file_hash), (_, json_data) in zip(file_infos, files_data):
-            # Calculate relative path from project root
-            try:
-                relative_path = file_path.relative_to(project_path)
-            except ValueError:
-                relative_path = Path(file_path.name)
+            self._add_file_node(modifier, file_path, file_hash, json_data, project_path)
 
-            # Normalize and inspect statements to compute file position range
-            stmt_list: list[dict[str, Any]] = (
-                [json_data] if not isinstance(json_data, list) else json_data
-            )
-            file_end_line = 1
-            file_end_file_pos = 0
-            file_end_token_pos = 0
-            for stmt in stmt_list:
-                attributes = stmt.get("attributes", {})
-                end_line = attributes.get("endLine")
-                if isinstance(end_line, int) and end_line > file_end_line:
-                    file_end_line = end_line
-                end_file_pos = attributes.get("endFilePos")
-                if isinstance(end_file_pos, int) and end_file_pos > file_end_file_pos:
-                    file_end_file_pos = end_file_pos
-                end_token_pos = attributes.get("endTokenPos")
-                if isinstance(end_token_pos, int) and end_token_pos > file_end_token_pos:
-                    file_end_token_pos = end_token_pos
-
-            # Create file node (ID: hex hash)
-            file_id = file_hash
-            storage.add_node(file_id)
-            storage.set_node_props(
-                file_id,
-                {
-                    "nodeType": "File",
-                    "absolutePath": str(file_path),
-                    "relativePath": str(relative_path),
-                    "startLine": 1,
-                    "endLine": file_end_line,
-                    "startFilePos": 0,
-                    "endFilePos": file_end_file_pos,
-                    "startTokenPos": 0,
-                    "endTokenPos": file_end_token_pos,
-                },
-            )
-
-            # Link file to project
-            edge_id = (project_id, file_id, "PARENT_OF")
-            storage.add_edge(edge_id)
-            storage.set_edge_props(edge_id, {"field": "files"})
-
-            # Process statements in file (node IDs: {hex}_1, {hex}_2, ...)
-            node_counter = [1]
-            for idx, item in enumerate(stmt_list):
-                self._process_node(
-                    storage, item, file_id, "stmts", idx, node_counter, file_hash
-                )
-
-        # Project node does not correspond to a concrete source range.
-        # Use sentinel values for all position attributes.
-        storage.set_node_props(
-            project_id,
+        # Set sentinel position values on project node.
+        project_node = modifier.ast.node("project")
+        project_node.set_properties(
             {
-                "nodeType": "Project",
-                "absolutePath": str(project_path),
                 "startLine": -1,
                 "endLine": -1,
                 "startFilePos": -1,
                 "endFilePos": -1,
                 "startTokenPos": -1,
                 "endTokenPos": -1,
-            },
+            }
         )
 
-        return storage
+        return modifier
+
+    def _add_file_node(
+        self,
+        modifier: Modifier,
+        file_path: Path,
+        file_hash: str,
+        stmt_list: list[dict[str, object]],
+        project_path: Path,
+    ) -> None:
+        # Create file node, link to project, process statements.
+        try:
+            relative_path = file_path.relative_to(project_path)
+        except ValueError:
+            relative_path = Path(file_path.name)
+
+        end_pos = self._compute_file_end_positions(stmt_list)
+
+        modifier.add_node(
+            file_hash,
+            "File",
+            absolutePath=str(file_path),
+            relativePath=str(relative_path),
+            startLine=1,
+            endLine=end_pos["endLine"],
+            startFilePos=0,
+            endFilePos=end_pos["endFilePos"],
+            startTokenPos=0,
+            endTokenPos=end_pos["endTokenPos"],
+        )
+        modifier.add_edge("project", file_hash, field="files")
+
+        node_counter = [1]
+        for idx, item in enumerate(stmt_list):
+            self._process_node(
+                modifier, item, file_hash, "stmts", idx, node_counter, file_hash
+            )
+
+    @staticmethod
+    def _compute_file_end_positions(
+        stmt_list: list[dict[str, object]],
+    ) -> dict[str, int]:
+        # Compute file end positions from statement attributes.
+        end_line = 1
+        end_file_pos = 0
+        end_token_pos = 0
+
+        for stmt in stmt_list:
+            attrs = stmt.get("attributes", {})
+            if not isinstance(attrs, dict):
+                continue
+            val = attrs.get("endLine")
+            if isinstance(val, int) and val > end_line:
+                end_line = val
+            val = attrs.get("endFilePos")
+            if isinstance(val, int) and val > end_file_pos:
+                end_file_pos = val
+            val = attrs.get("endTokenPos")
+            if isinstance(val, int) and val > end_token_pos:
+                end_token_pos = val
+
+        return {
+            "endLine": end_line,
+            "endFilePos": end_file_pos,
+            "endTokenPos": end_token_pos,
+        }
 
     def _process_node(
         self,
-        storage: Storage,
-        node_data: Any,
+        modifier: Modifier,
+        node_data: object,
         parent_id: str | None,
         field_name: str | None,
         index: int | None,
         node_counter: list[int],
         prefix: str,
     ) -> str | None:
-        """Process a single node and its children recursively.
-
-        Args:
-            storage: Storage to populate.
-            node_data: JSON node data.
-            parent_id: Parent node ID if this is a child.
-            field_name: Field name in parent if this is a child.
-            index: Array index if this is an array element.
-            node_counter: Mutable list with single int counter for generating node IDs.
-            prefix: Prefix for node IDs (file hash for file nodes, empty for code nodes).
-
-        Returns:
-            Node ID if a node was created, None otherwise.
-        """
-        if node_data is None:
+        # Recursively convert a PHP-Parser JSON node into graph nodes/edges.
+        if not isinstance(node_data, dict) or "nodeType" not in node_data:
             return None
 
-        if not isinstance(node_data, dict):
+        node_id = self._generate_node_id(node_counter, prefix)
+        properties, child_fields = self._extract_node_data(node_data)
+
+        node_type_val = properties.pop("nodeType")
+        if not isinstance(node_type_val, str):
             return None
 
-        # Only create nodes for objects with nodeType
-        if "nodeType" not in node_data:
-            return None
+        modifier.add_node(node_id, node_type_val, **properties)
 
-        # Generate unique node ID
-        current_counter = node_counter[0]
-        if prefix:
-            node_id = f"{prefix}_{current_counter}"
-        else:
-            node_id = f"node_{current_counter}"
+        if parent_id is not None and field_name is not None:
+            if index is not None:
+                modifier.add_edge(parent_id, node_id, field=field_name, index=index)
+            else:
+                modifier.add_edge(parent_id, node_id, field=field_name)
+
+        self._process_children(modifier, child_fields, node_id, node_counter, prefix)
+        return node_id
+
+    @staticmethod
+    def _generate_node_id(node_counter: list[int], prefix: str) -> str:
+        # Generate unique node ID from counter and prefix.
+        current = node_counter[0]
         node_counter[0] += 1
+        if prefix:
+            return f"{prefix}_{current}"
+        return f"node_{current}"
 
-        # Collect node properties
-        properties: dict[str, Any] = {}
-        child_fields: list[tuple[str, Any]] = []
+    @staticmethod
+    def _extract_node_data(
+        node_data: dict[str, object],
+    ) -> tuple[dict[str, object], list[tuple[str, object]]]:
+        # Separate scalar properties from child fields.
+        properties: dict[str, object] = {}
+        child_fields: list[tuple[str, object]] = []
 
         for key, value in node_data.items():
-            if key == "attributes":
-                # Flatten attributes to node properties
-                if isinstance(value, dict):
-                    properties.update(value)
+            if key == "attributes" and isinstance(value, dict):
+                properties.update(value)
             elif isinstance(value, dict):
-                # Nested object - will create child node
                 child_fields.append((key, value))
-            elif isinstance(value, list):
-                # Check if it's an array of objects or scalars
-                if value and isinstance(value[0], dict):
-                    # Array of objects - create child nodes
-                    child_fields.append((key, value))
-                else:
-                    # Array of scalars - save as property
-                    properties[key] = value
+            elif isinstance(value, list) and value and isinstance(value[0], dict):
+                child_fields.append((key, value))
             else:
-                # Scalar property
                 properties[key] = value
 
-        # Add node to storage
-        storage.add_node(node_id)
-        if properties:
-            storage.set_node_props(node_id, properties)
+        return properties, child_fields
 
-        # Create edge from parent if applicable
-        if parent_id is not None and field_name is not None:
-            edge_props: dict[str, str | int] = {"field": field_name}
-            if index is not None:
-                edge_props["index"] = index
-            edge_id = (parent_id, node_id, "PARENT_OF")
-            storage.add_edge(edge_id)
-            if edge_props:
-                storage.set_edge_props(edge_id, edge_props)
-
-        # Process child fields recursively
+    def _process_children(
+        self,
+        modifier: Modifier,
+        child_fields: list[tuple[str, object]],
+        parent_id: str,
+        node_counter: list[int],
+        prefix: str,
+    ) -> None:
+        # Process child fields recursively.
         for child_key, child_value in child_fields:
             if isinstance(child_value, list):
                 for idx, item in enumerate(child_value):
                     self._process_node(
-                        storage, item, node_id, child_key, idx, node_counter, prefix
+                        modifier, item, parent_id, child_key, idx, node_counter, prefix
                     )
             else:
                 self._process_node(
-                    storage,
+                    modifier,
                     child_value,
-                    node_id,
+                    parent_id,
                     child_key,
                     None,
                     node_counter,
                     prefix,
                 )
-
-        return node_id

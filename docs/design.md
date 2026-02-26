@@ -2,7 +2,7 @@
 
 ## Design Overview
 
-**Classes**: `PHPASTNode`, `PHPASTEdge`, `PHPASTGraph`, `Parser`, `PrettyPrinter`, `PHPRunner`
+**Classes**: `PHPASTNode`, `PHPASTEdge`, `PHPASTGraph`, `Modifier`, `Parser`, `PrettyPrinter`, `PHPRunner`
 
 **Relationships**: 
 - `PHPASTNode` extends cpg2py's `AbcNodeQuerier`
@@ -10,6 +10,7 @@
 - `PHPASTGraph` extends cpg2py's `AbcGraphQuerier`
 - `Parser` uses `PHPRunner` to invoke PHP-Parser parse + JsonSerializer
 - `PrettyPrinter` uses `PHPRunner` to invoke PHP-Parser JsonDecoder + PrettyPrinter
+- `Modifier` encapsulates all direct `Storage` mutation (add/remove nodes and edges)
 - All classes use cpg2py's `Storage` for node/edge management
 
 **Inherited from cpg2py**: `AbcNodeQuerier`, `AbcEdgeQuerier`, `AbcGraphQuerier`, `Storage`
@@ -187,9 +188,81 @@ json_str = graph.to_json()
 
 ---
 
+### Modifier Class
+
+- **Responsibility**: Encapsulates all graph mutation operations (add, remove, modify nodes and edges). This is the **only** approved way to modify the AST graph — callers must never use `Storage` directly.
+
+- **Design Rationale**: `AST` (AbcGraphQuerier) is a **query** interface. Graph mutation is a separate concern, so it lives in a dedicated utility class. This keeps `AST` focused on traversal/query and makes modification operations explicit and auditable.
+
+- **[__init__(self, ast: AST) -> None]**
+  - **Behavior**: Wraps an existing AST instance for mutation
+  - **Input**: AST instance
+  - **Note**: Holds a reference to the AST's internal storage; mutations are immediately visible through the AST's query methods
+
+- **[@property ast -> AST]**
+  - **Behavior**: Returns the underlying AST instance
+  - **Output**: AST instance
+
+#### Node Operations
+
+- **[add_node(node_id: str, node_type: str, **props) -> Node]**
+  - **Behavior**: Creates a new node in the graph with the given type and properties
+  - **Input**: Node ID string, node type string (e.g. `"Stmt_Break"`), optional keyword properties
+  - **Output**: Node instance for the newly created node
+  - **Raises**: `ValueError` if node ID already exists in the graph
+  - **Note**: Automatically sets `nodeType` property; additional properties are set via `set_node_props`
+
+- **[remove_node(node_id: str) -> None]**
+  - **Behavior**: Removes a node and all its connected edges from the graph
+  - **Input**: Node ID string
+  - **Raises**: `KeyError` if node ID is not in the graph
+  - **Note**: Removes all incoming and outgoing edges automatically
+
+#### Edge Operations
+
+- **[add_edge(from_id: str, to_id: str, edge_type: str = "PARENT_OF", **props) -> Edge]**
+  - **Behavior**: Creates a new edge between two existing nodes
+  - **Input**: From node ID, to node ID, edge type (default: `"PARENT_OF"`), optional keyword properties (e.g. `field="stmts"`, `index=0`)
+  - **Output**: Edge instance for the newly created edge
+  - **Raises**: `KeyError` if either node does not exist; `ValueError` if edge already exists
+
+- **[remove_edge(from_id: str, to_id: str, edge_type: str = "PARENT_OF") -> None]**
+  - **Behavior**: Removes an edge from the graph
+  - **Input**: From node ID, to node ID, edge type
+  - **Raises**: `KeyError` if edge is not in the graph
+
+- **Example Usage**:
+```python
+from php_parser_py import parse_file, Modifier
+
+ast = parse_file("example.php")
+modifier = Modifier(ast)
+
+# Add a new node
+break_node = modifier.add_node("new_1", "Stmt_Break")
+
+# Connect it as a child
+modifier.add_edge("parent_id", "new_1", field="stmts", index=0)
+
+# Remove a node (also removes connected edges)
+modifier.remove_node("old_node_id")
+
+# Remove just an edge
+modifier.remove_edge("parent_id", "child_id")
+
+# Modify properties (still via Node API, not Modifier)
+break_node.set_property("num", 1)
+```
+
+> **Note**: Property modification (`set_property`, `set_properties`) remains on the `Node` class (inherited from `AbcNodeQuerier`). `Modifier` handles structural changes only (add/remove nodes and edges).
+
+---
+
 ### Parser Class
 
 - **Responsibility**: Parses PHP source code by invoking PHP-Parser, returning AST or list of nodes.
+
+- **Internal Implementation**: Creates `Storage → AST` directly, then wraps with `Modifier` for all node/edge creation. Parser never calls storage mutation methods directly outside of initial `Storage()` + `AST()` construction.
 
 - **Properties**:
   - `_runner: PHPRunner` - PHP binary execution handler
@@ -199,12 +272,6 @@ json_str = graph.to_json()
   - **Input**: Optional `static_php_py.PHP` instance
   - **Note**: If `php` is not provided, defaults to `PHP.builtin()`
 
-- **[parse(code: str) -> AST]**
-  - **Behavior**: Parses PHP code via PHP-Parser, creates temporary file structure for backward compatibility
-  - **Input**: PHP source code string
-  - **Output**: AST instance with project -> file -> statements hierarchy
-  - **Raises**: `ParseError` if PHP-Parser reports syntax error
-  - **Note**: For code-only parsing without project structure, use `parse_code()` instead
 
 - **[parse_code(code: str) -> list[Node]]**
   - **Behavior**: Parses PHP code string into raw statement nodes without project/file structure
@@ -253,15 +320,15 @@ json_str = graph.to_json()
       - Position: `startLine = 1, endLine = computed from children`
     - Statement nodes within each file (prefixed with file hash)
 
-- **[_json_to_storage(json_data: list | dict) -> Storage]** (internal)
-  - **Behavior**: Converts PHP-Parser JSON to cpg2py Storage
-  - **Input**: Parsed JSON data (list of statements or single node)
-  - **Output**: Populated Storage instance
+- **[_process_node(modifier, node_data, parent_id, field_name, index, node_counter, prefix)]** (internal)
+  - **Behavior**: Recursively converts a PHP-Parser JSON node into graph nodes and edges via `Modifier`
+  - **Input**: Modifier instance, JSON node data, parent context, ID counter
+  - **Output**: Node ID if created, None otherwise
   - **Algorithm**:
-    1. Generate unique ID for each node object with `nodeType`
-    2. Store all JSON fields as node properties
-    3. Create PARENT_OF edges for nested nodes
-    4. Store array index in edge properties for ordered children
+    1. Generate unique ID for each object with `nodeType`
+    2. Call `modifier.add_node(node_id, node_type, **props)` to create the node
+    3. Call `modifier.add_edge(parent_id, node_id, field=..., index=...)` to link to parent
+    4. Recurse into child fields (nested objects and arrays)
 
 ---
 
@@ -346,14 +413,7 @@ nodes = parse_code("<?php function foo() {}")
 # Returns list of Node instances
 ```
 
-**[parse(code: str) -> AST]**
-- **Responsibility**: Convenience function to parse PHP code (backward compatibility)
-- **Note**: Creates temporary file structure, use `parse_code()` for code-only parsing
-- **Example**:
-```python
-from php_parser_py import parse
-ast = parse("<?php echo 'hello';")
-```
+
 
 **[parse_file(path: str) -> AST]**
 - **Responsibility**: Convenience function to parse a single PHP file with project structure
@@ -522,10 +582,11 @@ All exceptions follow these patterns:
 
 ```
 php_parser_py/
-├── __init__.py              # Public API: parse, parse_file
+├── __init__.py              # Public API: parse, parse_file, Modifier
 ├── graph.py                 # PHPASTGraph (extends AbcGraphQuerier)
 ├── node.py                  # PHPASTNode (extends AbcNodeQuerier)
 ├── edge.py                  # PHPASTEdge (extends AbcEdgeQuerier)
+├── modifier.py              # Modifier (graph mutation operations)
 ├── parser.py                # Parser class with JSON-to-Storage mapping
 ├── printer.py               # PrettyPrinter class with Storage-to-JSON
 ├── runner.py                # PHPRunner class for PHP-Parser invocation

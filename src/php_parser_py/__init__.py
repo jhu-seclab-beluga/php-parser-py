@@ -8,34 +8,19 @@ and manipulation of PHP code.
 from pathlib import Path
 from typing import Callable
 
-from php_parser_py._parser import Parser as _Parser
-from php_parser_py._printer import PrettyPrinter as _PrettyPrinter
-from php_parser_py._resources import ensure_php_parser_extracted
+from ._resources import ensure_php_parser_extracted
 
 # Ensure PHP-Parser is extracted on first import
 ensure_php_parser_extracted()
 
 # Import and expose public classes directly
-from php_parser_py._ast import AST
-from php_parser_py._edge import Edge
-from php_parser_py._exceptions import NodeNotInFileError, ParseError, RunnerError
-from php_parser_py._node import Node
-
-
-class Parser(_Parser):
-    """Parses PHP source code using PHP-Parser.
-
-    Invokes PHP-Parser to parse PHP code and converts the resulting JSON
-    to cpg2py Storage format for graph-based analysis.
-    """
-
-
-class PrettyPrinter(_PrettyPrinter):
-    """Converts AST to PHP code using PHP-Parser's PrettyPrinter.
-
-    Reconstructs JSON from AST graph and invokes PHP-Parser to generate
-    formatted PHP source code.
-    """
+from ._ast import AST
+from ._edge import Edge
+from ._exceptions import NodeNotInFileError, ParseError, RunnerError
+from ._modifier import Modifier
+from ._node import Node
+from ._parser import Parser
+from ._printer import PrettyPrinter
 
 
 def parse_code(code: str) -> list[Node]:
@@ -92,7 +77,7 @@ def parse_project(
     Args:
         project_path: Project root directory path.
         file_filter: Function to filter files. Takes a Path and returns
-            True if the file should be parsed. Defaults to checking for `.php` suffix.
+            True if the file should be parsed. Defaults to .php suffix.
 
     Returns:
         AST instance with project -> files -> statements hierarchy.
@@ -111,8 +96,9 @@ def parse_project(
 __version__ = "0.1.0"
 __all__ = [
     "AST",
-    "Node",
     "Edge",
+    "Modifier",
+    "Node",
     "Parser",
     "PrettyPrinter",
     "ParseError",
